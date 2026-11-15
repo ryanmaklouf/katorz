@@ -1,0 +1,2128 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Katorz">
+<meta name="theme-color" content="#0b2a20">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:dark}body{margin:0;font-family:system-ui,-apple-system,sans-serif;font-size:14px}img{max-width:100%}[hidden]{display:none!important}html,body{overscroll-behavior:none}</style>
+</head>
+<body>
+<title>Katorz</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lalezar&family=Rubik:wght@400;500;700&display=swap">
+<style>
+/* Layout: one-screen card table, phone portrait first — opponents on top, table melds in the middle, piles, your hand and actions at the bottom. Single felt look, dark by design. */
+:root {
+  --felt: #123a2d;
+  --felt-deep: #0b2a20;
+  --felt-line: #1f5242;
+  --ivory: #f7f1e3;
+  --ink: #1d1b18;
+  --red: #b52a20;
+  --brass: #d9a748;
+  --flame: #e8572c;
+  --text: #eef3ee;
+  --muted: #a9c2b6;
+  --display: "Lalezar", "Arial Rounded MT Bold", system-ui, sans-serif;
+  --body: "Rubik", system-ui, -apple-system, sans-serif;
+  color-scheme: dark;
+  /* ONE card size for the whole screen: 7 cards + 6 gaps of 4px fill the width (hand, piles, drawn card, table, drag ghost) */
+  --cw: clamp(38px, calc((min(100vw, 640px) - 20px - 24px) / 7), 66px);
+  --ch: calc(var(--cw) * 1.4);
+  /* spacing rhythm: 8px between the four zones (portraits / table / pile row / hand), 6px inside a zone */
+  --zg: 8px; --ig: 6px;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+/* the page never moves: no page scroll, no rubber band, no pull-down; only the table and the sheets scroll inside */
+html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+body {
+  position: fixed; inset: 0; touch-action: none;
+  margin: 0; background: radial-gradient(120% 80% at 50% 40%, var(--felt) 0%, var(--felt-deep) 100%) fixed, var(--felt-deep);
+  color: var(--text); font-family: var(--body); font-size: 15px;
+  -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none;
+}
+button { font: inherit; color: inherit; }
+button:focus-visible, .card:focus-visible, .meld:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
+.app {
+  height: 100%; height: 100dvh; max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--zg); overflow: hidden;
+  padding: max(6px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-right, 0px)) max(6px, env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px));
+}
+header { display: none; }
+.menu-list { display: flex; flex-direction: column; gap: 8px; }
+header .logo { font-size: 18px; }
+header .ghost { padding: 4px 10px; font-size: 12px; }
+.logo { font-family: var(--display); font-size: 26px; line-height: 1; color: var(--brass); letter-spacing: .5px; white-space: nowrap; }
+.logo small { font-family: var(--body); font-size: 12px; color: var(--muted); margin-left: 6px; letter-spacing: 0; }
+header .sp { flex: 1; }
+.ghost { background: transparent; border: 1px solid var(--felt-line); border-radius: 999px; padding: 6px 10px; font-size: 13px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.ghost:hover { color: var(--text); border-color: var(--muted); }
+
+.opps { flex: none; display: flex; justify-content: center; gap: var(--ig); --oh: clamp(76px, 12.5dvh, 120px); }
+.opps.dense .opp { padding: 4px 6px; }
+.opps.dense .opp .sc { font-size: 17px; }
+.opp { background: rgba(0,0,0,.22); border: 1px solid var(--felt-line); border-radius: 12px; padding: 6px 8px; min-width: 0; display: flex; gap: 6px; align-items: flex-start; }
+.opp .info { flex: 1 1 100%; min-width: 0; order: 3; }
+.opp { flex-wrap: wrap; justify-content: space-between; row-gap: 4px; }
+.opp .thrown { order: 2; }
+.opp .pp { order: 1; }
+.ghost[aria-pressed=true] { color: var(--brass); border-color: var(--brass); }
+/* portrait frame, three fixed zones: score + status icons on top, initials (photo later) in the middle, first name + cards at the bottom */
+.opp.portrait { position: relative; display: block; padding: 0; overflow: hidden; aspect-ratio: 4 / 5; border-width: 2px; flex: none;
+  width: min(calc((100% - (var(--cols, 3) - 1) * 6px) / var(--cols, 3)), calc(var(--oh) * .8)); transition: filter .2s; }
+.opp.portrait .photo img, .opp.portrait .photo video { width: 100%; height: 100%; object-fit: cover; object-position: 50% 70%; }
+.opps.dense { gap: 6px; }
+.opp.portrait .photo { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; padding: 0; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.opp.portrait .ini { font-family: var(--display); font-size: calc(var(--oh) * .29); color: rgba(247,241,227,.72); line-height: 1; padding-top: 4px; }
+.opp.portrait .ov-top, .opp.portrait .ov-bot { position: absolute; left: 0; right: 0; padding: 3px 5px; pointer-events: none; display: flex; align-items: center; gap: 4px; }
+.opp.portrait .ov-top { top: 0; }
+.opp.portrait .ov-bot { bottom: 0; background: linear-gradient(transparent, rgba(0,0,0,.7)); padding-top: 10px; }
+.opp.portrait .sc { font-family: var(--display); font-size: 19px; color: var(--ivory); text-shadow: 0 1px 3px rgba(0,0,0,.6); line-height: 1; }
+.ics { margin-left: auto; display: flex; gap: 4px; align-items: center; }
+.opp.portrait .stat { position: absolute; right: 4px; bottom: calc(var(--oh) * .26); display: flex; flex-direction: row-reverse; align-items: center; gap: 3px; pointer-events: none; z-index: 1; }
+.opp.portrait .photo .ini { margin-bottom: calc(var(--oh) * .14); } /* initials sit a bit high: the status badges go under them, above the name */
+.ok { width: 16px; height: 16px; border-radius: 50%; background: var(--brass); color: var(--ink); font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; flex: none; }
+.ok.pop { animation: pop2 .45s ease-out .25s both; }
+@keyframes pop2 { 0% { scale: 1; } 50% { scale: 1.45; } 100% { scale: 1; } }
+.fl { display: inline-flex; align-items: center; gap: 1px; color: #ff8a5c; font-weight: 700; font-size: 12px; line-height: 1; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+.fl svg { width: 10px; height: 12px; }
+.opps.dense .opp.portrait .nm { font-size: 11px; letter-spacing: -.01em; }
+.opp.portrait .nm { flex: 1; min-width: 0; text-align: center; font-weight: 700; font-size: 12px; color: var(--ivory); text-shadow: 0 1px 2px rgba(0,0,0,.7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nc { flex: none; display: inline-flex; align-items: center; gap: 2px; font-size: 12px; font-weight: 700; color: rgba(247,241,227,.9); }
+.nc .mb { display: inline-block; width: 7px; height: 10px; border-radius: 1.5px; background: #8f2a20; border: 1px solid var(--ivory); }
+.nc.last { color: #ff8a5c; }
+.opp.portrait.turn { border-color: var(--brass); animation: halo 1.6s ease-in-out infinite; }
+@keyframes halo { 0%, 100% { box-shadow: 0 0 0 0 rgba(217,167,72,0), inset 0 0 0 1px var(--brass); } 50% { box-shadow: 0 0 10px 2px rgba(217,167,72,.55), inset 0 0 0 1px var(--brass); } }
+.opps.playing .opp.portrait:not(.turn) { filter: brightness(.68); }
+.delta { position: absolute; left: 50%; top: 50%; translate: -50% -50%; z-index: 3; font-family: var(--display); font-size: 22px; line-height: 1; padding: 4px 8px 2px; border-radius: 999px; background: rgba(0,0,0,.72); color: #ff8a5c; pointer-events: none; white-space: nowrap; }
+.delta.win { color: var(--brass); }
+.opp.portrait.out { filter: grayscale(.8) brightness(.55); }
+.outtag { position: absolute; left: 50%; top: 52%; translate: -50% -50%; z-index: 2; font-size: 11px; font-weight: 700; color: var(--ivory); background: rgba(0,0,0,.7); border-radius: 999px; padding: 1px 6px; pointer-events: none; }
+table.sc tr.outrow td { opacity: .55; }
+.pp { flex: none; position: relative; width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--felt-line); padding: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.opp.turn .pp { border-color: var(--brass); }
+.pp .ini { font-family: var(--display); font-size: 17px; color: rgba(247,241,227,.9); line-height: 1; }
+.pp .camb { position: absolute; right: -4px; bottom: -4px; width: 17px; height: 17px; border-radius: 50%; background: var(--brass); color: var(--ink); font-size: 8px; display: flex; align-items: center; justify-content: center; border: 2px solid var(--felt-deep); }
+.pp.self { width: 34px; height: 34px; align-self: center; }
+.pp.self .ini { font-size: 14px; }
+.c0 { background: radial-gradient(circle at 50% 35%, #3b6a58, #173a2e); }
+.c1 { background: radial-gradient(circle at 50% 35%, #7a5634, #33241a); }
+.c2 { background: radial-gradient(circle at 50% 35%, #55547f, #22223a); }
+.c3 { background: radial-gradient(circle at 50% 35%, #2f6478, #15303a); }
+.c4 { background: radial-gradient(circle at 50% 35%, #74405e, #331b2a); }
+.c5 { background: radial-gradient(circle at 50% 35%, #6a6a34, #2e2e16); }
+/* one colour per seat, used for the owner chips on the table and in the fosse (no need to read the letters) */
+.s0 { background: var(--brass) !important; color: var(--ink) !important; }
+.s1 { background: #8a5a2b !important; } .s2 { background: #5a58a0 !important; } .s3 { background: #2f7890 !important; }
+.s4 { background: #8e4a72 !important; } .s5 { background: #6f6f2a !important; }
+.camframe { width: 100%; aspect-ratio: 3 / 4; max-height: 60vh; border-radius: 14px; display: flex; align-items: center; justify-content: center; }
+.camframe span { font-family: var(--display); font-size: 72px; color: rgba(247,241,227,.85); }
+.opp .thrown { flex: none; display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.opp .thrown .tl { font-size: 9px; color: var(--muted); white-space: nowrap; }
+.card.tiny { --w: 28px; box-shadow: 0 1px 3px rgba(0,0,0,.35); }
+.card.tiny .sm { display: none; }
+.opp.turn { border-color: var(--brass); box-shadow: 0 0 0 1px var(--brass) inset; }
+.opp .nm { font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.opp .row { display: flex; gap: 2px 8px; align-items: baseline; font-size: 12px; color: var(--muted); margin-top: 2px; flex-wrap: wrap; }
+.opp .sc { font-family: var(--display); font-size: 20px; color: var(--text); line-height: 1; }
+.badge { font-size: 11px; padding: 1px 6px; border-radius: 999px; background: rgba(217,167,72,.18); color: var(--brass); }
+.burn { color: var(--flame); font-weight: 700; }
+
+.tablewrap { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+.table { --tw: min(calc(var(--cw) * var(--tk, 1)), var(--hw)); flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; -webkit-overflow-scrolling: touch; background: rgba(0,0,0,.14); border: 1px solid var(--felt-line); border-radius: 12px; padding: var(--ig); display: flex; flex-wrap: wrap; align-content: flex-start; gap: var(--ig); }
+.table .empty { color: var(--muted); font-size: 13px; margin: auto; text-align: center; max-width: 32ch; display: flex; flex-direction: column; align-items: center; gap: 10px; line-height: 1.4; }
+.table .empty b { color: var(--brass); font-weight: 500; }
+.table .empty .row2 { display: flex; gap: 8px; }
+.table .empty .ghost { min-height: 44px; padding: 0 18px; font-size: 14px; }
+.table .card { --w: var(--tw); }
+/* a combination = the cards fanned to the right, only the index strip of each covered card shows; the owner is a chip on the first card */
+.meld { position: relative; display: block; padding: 0; border-radius: 8px; cursor: default; }
+.meld .own { position: absolute; left: 3px; right: 3px; bottom: 2px; z-index: 3; height: 3px; border-radius: 2px; background: rgba(11,42,32,.85); pointer-events: none; font-size: 0; }
+.meld .done { position: absolute; right: 3px; top: 3px; z-index: 3; width: 16px; height: 16px; border-radius: 50%; background: var(--brass); color: var(--ink); font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; pointer-events: none; }
+.meld.fresh { animation: fresh 1.7s ease-out both; }
+@keyframes fresh { 0%, 35% { box-shadow: 0 0 0 0 rgba(232,87,44,0); } 50% { box-shadow: 0 0 0 3px rgba(232,87,44,.9), 0 0 14px rgba(232,87,44,.6); } 100% { box-shadow: 0 0 0 0 rgba(232,87,44,0); } }
+.meld .cards { display: flex; }
+.meld .cards .card { margin-right: calc(var(--tw) * -.58); }
+.meld .cards .card:last-child { margin-right: 0; }
+.table.tight .meld .cards .card { margin-right: calc(var(--tw) * -.62); }
+.table.tight .meld .cards .card:last-child { margin-right: 0; }
+.meld.target { outline: 2px dashed var(--brass); outline-offset: 2px; cursor: pointer; }
+.meld.mine .own { background: var(--brass); color: var(--ink); }
+.meld.closed .cards { opacity: .72; }
+
+.mid { flex: none; display: flex; align-items: flex-end; gap: var(--ig); height: var(--ch); }
+/* the message sits at the right of the pile row: fixed height (one card), 4 lines max, 2 when a button is shown */
+.side { flex: 1; min-width: 0; height: var(--ch); display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+.pile { position: relative; background: none; border: none; padding: 0; cursor: pointer; }
+.pile:disabled { cursor: default; }
+.pile .cnt { position: absolute; bottom: -6px; right: -6px; background: var(--felt-deep); border: 1px solid var(--felt-line); border-radius: 999px; font-size: 11px; padding: 0 6px; color: var(--muted); }
+#stock.live > .card { animation: breathe 1.6s ease-in-out infinite; }
+@keyframes breathe { 0%, 100% { box-shadow: 0 0 0 2px var(--brass), 0 4px 10px rgba(0,0,0,.4); } 50% { box-shadow: 0 0 0 3px var(--brass), 0 0 16px 3px rgba(217,167,72,.55); } }
+#stock.empty > .card { opacity: .45; }
+/* a possible target is dashed (a selected card has a solid ring) */
+#discard.live .fanc.top .card { outline: 2px dashed var(--brass); outline-offset: 2px; }
+.card.slot { background: transparent; border: 2px dashed rgba(217,167,72,.7); box-shadow: none; display: flex; align-items: center; justify-content: center; }
+.card.slot span { font-size: 11px; font-weight: 700; color: var(--brass); }
+#discard.drop .card.slot { border-color: var(--flame); background: rgba(232,87,44,.15); }
+#discard { display: flex; align-items: flex-start; }
+.fanc { position: relative; flex: none; }
+.fanc + .fanc { margin-left: calc(var(--cw) * -.64); } /* 36% of each card shows: the corner index stays readable */
+/* who threw it: written inside the visible strip, under the index (no extra line under the pile) */
+.fanc .by { position: absolute; left: 3px; width: calc(var(--cw) * .36 - 6px); bottom: 3px; z-index: 1; height: 4px; border-radius: 2px; font-size: 0; pointer-events: none; }
+.msg { min-width: 0; font-size: 12.5px; color: var(--muted); line-height: 15px; max-height: 60px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow-wrap: anywhere; hyphens: auto; }
+.side.hasbtn .msg { display: none; }
+.side.errbtn .actions { display: none; }
+.msg.fit { font-size: 11px; line-height: 14px; max-height: 56px; } /* safety net only: a text too long for 4 lines steps down instead of being cut */
+.msg .lg { opacity: .8; }
+.msg b { color: var(--text); font-weight: 500; }
+.log { font-size: 12px; color: var(--muted); min-height: 1.3em; }
+
+.stage { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: rgba(217,167,72,.08); border: 1px solid rgba(217,167,72,.35); border-radius: 12px; padding: 6px 8px; }
+.stage .meld { cursor: pointer; }
+.stage .tot { font-family: var(--display); font-size: 20px; color: var(--brass); }
+.stage .hint { font-size: 11px; color: var(--muted); }
+
+.me { flex: none; position: relative; width: var(--cw); height: var(--ch); } /* your camera tile = exactly one card */
+/* your own camera tile, same 4:5 portrait look as the opponents; score on it; tap = menu */
+.selftile { position: absolute; inset: 0; border-radius: 10px; border: 2px solid var(--felt-line); padding: 0; overflow: hidden; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.selftile .ini { font-family: var(--display); font-size: calc(var(--ch) * .38); color: rgba(247,241,227,.35); line-height: 1; padding-top: 6px; }
+.selftile .sc { position: absolute; top: 3px; left: 5px; font-family: var(--display); font-size: 18px; color: var(--ivory); text-shadow: 0 1px 3px rgba(0,0,0,.6); line-height: 1; }
+.selftile .mn { position: absolute; bottom: 3px; right: 3px; z-index: 1; width: 16px; height: 16px; border-radius: 50%; background: rgba(0,0,0,.45); color: var(--ivory); font-size: 10px; line-height: 16px; text-align: center; }
+.selftile .st { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 3px 3px; background: linear-gradient(transparent, rgba(0,0,0,.6)); display: flex; justify-content: flex-start; gap: 3px; }
+.me .delta { font-size: 18px; }
+.me.turn .selftile { border-color: var(--brass); }
+.me .badge { font-size: 9px; padding: 0 5px; }
+.me .sc { font-family: var(--display); font-size: 18px; color: var(--text); line-height: 1; }
+
+.me .sp { flex: 1; }
+.me { align-items: center; }
+.me .melog { flex: 0 1 60%; min-width: 0; font-size: 12px; line-height: 1.3; color: var(--muted); text-align: right; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.me .ghost { padding: 4px 9px; font-size: 12px; }
+.me .ghost[aria-pressed=true] { color: var(--brass); border-color: var(--brass); }
+/* the hand: 2 rows (7 + 7, 8 + 7 at 15-16 cards), no vertical overlap. Inside a row each card covers the right part of the
+   previous one: the full height and the left strip with the corner index stay visible (strip ≥ 44 px at 390 wide and more).
+   Hand cards are 25% bigger than the table cards, as long as a 7-card row keeps 44 px strips. */
+.app { --hw: min(calc(var(--cw) * 1.25), calc(min(100vw, 640px) - 20px - 6 * 44px)); --hh: calc(var(--hw) * 1.4); }
+.hand .ph { width: var(--hw); height: var(--hh); border: 2px dashed var(--brass); border-radius: 6px; }
+.hand { flex: none; --step: calc((100% - var(--hw)) / var(--hc1, 6));
+  display: grid; grid-template-columns: repeat(var(--hc1, 6), var(--step)) var(--hw); grid-auto-rows: var(--hh); row-gap: var(--ig); column-gap: 0;
+  align-content: start; min-height: calc(var(--hh) * 2 + var(--ig)); }
+.hand > * { min-width: 0; }
+.hand .card.dim, .drawn .card.dim { opacity: .3; }
+.drawn:has(.lifted) .dl { display: none; } /* the « Piochée » label leaves with its card */
+.card.press { scale: 1.05; z-index: 2; }
+.lifted { position: fixed !important; left: -400px !important; top: 0 !important; opacity: 0 !important; pointer-events: none !important; }
+.hand .card { box-shadow: 0 -1px 3px rgba(0,0,0,.22), 0 2px 5px rgba(0,0,0,.35); }
+
+.drawn { position: relative; display: flex; }
+.drawn .dl { position: absolute; z-index: 2; bottom: 3px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 11px; font-weight: 700; color: #fff; background: #c2410c; border-radius: 999px; padding: 1px 7px; }
+.drawn .card .s, .drawn .card .jk { display: none; } /* the tag sits where the big pip was */
+.drawn .card { --w: var(--cw); cursor: grab; touch-action: none; box-shadow: 0 0 0 3px var(--flame), 0 4px 10px rgba(0,0,0,.4); }
+.drawn .card.sel { transform: translateY(-4px); box-shadow: 0 0 0 3px var(--brass), 0 8px 14px rgba(0,0,0,.45); }
+
+/* cards */
+.card { --w: 46px; width: var(--w); height: calc(var(--w) * 1.4); border-radius: calc(var(--w) * .12); background: var(--ivory); color: var(--ink);
+  position: relative; flex: none; box-shadow: 0 2px 5px rgba(0,0,0,.35); border: 1px solid rgba(0,0,0,.15); transition: transform .12s ease; }
+.card.red { color: var(--red); }
+.card .r { position: absolute; top: calc(var(--w) * .05); left: calc(var(--w) * .05); font-weight: 700; font-size: calc(var(--w) * .34); line-height: 1; letter-spacing: -.03em; }
+.card .r.r10 { letter-spacing: -.12em; margin-left: -.04em; }
+.card .sm { position: absolute; top: calc(var(--w) * .40); left: calc(var(--w) * .06); font-size: calc(var(--w) * .28); line-height: 1; }
+.card .s { position: absolute; bottom: calc(var(--w) * .05); right: calc(var(--w) * .07); font-size: calc(var(--w) * .46); line-height: 1; }
+/* the joker looks like no other card: warm brass face, red star (5:1), the card it stands for written in its strip */
+.card.joker { background: linear-gradient(160deg, #f8e7b8 0%, #ecc768 100%); border-color: rgba(120,80,10,.45); }
+.card.joker .r { color: var(--red); }
+.card.joker .jk { position: absolute; bottom: calc(var(--w) * .04); right: calc(var(--w) * .06); font-size: calc(var(--w) * .56); line-height: 1; color: var(--red); }
+.card .as { position: absolute; left: calc(var(--w) * .05); top: calc(var(--w) * .42); font-size: calc(var(--w) * .24); font-weight: 700; font-style: italic; line-height: 1; color: #4a3105; white-space: nowrap; letter-spacing: -.05em; }
+.card.back { background: repeating-linear-gradient(45deg, #7a1f18 0 6px, #8f2a20 6px 12px); border: 2px solid var(--ivory); }
+.card.pilec { --w: var(--cw); }
+.hand .card { --w: var(--hw); cursor: grab; touch-action: none; }
+.hand .card .s { right: auto; left: calc(var(--w) * .07); } /* big pip bottom-LEFT: it stays inside the visible strip */
+.hand .card.joker .jk { right: auto; left: calc(var(--w) * .05); }
+.hand .card.dragging { opacity: .25; }
+.ghostwrap { position: fixed; z-index: 30; pointer-events: none; width: var(--cw); height: var(--ch); transform: translate(-50%, -100%) rotate(-4deg) scale(1.08); transition: transform .1s; }
+.ghostwrap.lock { transform: translate(-50%, -100%) rotate(0deg) scale(1.12); }
+.ghostcard { position: absolute; left: 0; top: 0; --w: var(--cw); box-shadow: 0 12px 24px rgba(0,0,0,.5); transform: translateX(calc(var(--k, 0) * 10px)) rotate(calc(var(--k, 0) * 4deg)); }
+.ghostcard:first-child { z-index: 5; }
+.ghostwrap .badge2 { z-index: 6; }
+.flycard { box-shadow: 0 10px 20px rgba(0,0,0,.45); } /* above the table, under the sheets */
+.ghostwrap .badge2 { position: absolute; top: -8px; right: -8px; background: var(--brass); color: var(--ink); border-radius: 999px; font-size: 11px; font-weight: 700; padding: 0 6px; }
+.pile.drop .fanc.top .card, .pile.drop > .card, .meld.drop { box-shadow: 0 0 0 3px var(--flame), 0 4px 12px rgba(0,0,0,.4); }
+.meld.drop { box-shadow: none; outline: 3px solid var(--flame); outline-offset: 2px; }
+.table.drop { border-color: var(--flame); box-shadow: 0 0 0 1px var(--flame) inset; }
+.pending { width: 100%; display: flex; flex-direction: column; gap: 6px; padding: 6px; border: 1px dashed var(--brass); border-radius: 12px; background: rgba(217,167,72,.08); }
+.pending .ph-h { font-size: 13px; color: var(--muted); line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pending .tot { font-family: var(--display); font-size: 20px; color: var(--brass); margin-right: 6px; vertical-align: -2px; }
+.pending .ph-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.pending .meld { cursor: pointer; }
+.pending .meld .own { right: auto; left: 2px; bottom: 3px; height: auto; font-size: 11px; font-weight: 700; line-height: 15px; padding: 0 4px; border-radius: 999px; } /* waiting melds keep their value chip */
+.arrange { background: rgba(217,167,72,.12); border: 1px solid rgba(217,167,72,.45); border-radius: 12px; padding: 8px 10px; font-size: 13px; line-height: 1.4; }
+.arrange b { color: var(--brass); font-weight: 500; }
+.arrange { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.arrange .sp { flex: 1; }
+.arrange .ghost { padding: 4px 10px; font-size: 12px; }
+.hand .card.sel { transform: translateY(-8px); box-shadow: 0 0 0 2px var(--brass), 0 8px 14px rgba(0,0,0,.45); }
+.hand .card.new { box-shadow: 0 0 0 3px var(--flame), 0 4px 10px rgba(0,0,0,.4); }
+.hand .card.new::after { content: "piochée"; position: absolute; top: -9px; left: 50%; transform: translateX(-50%); background: var(--flame); color: #fff; font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 999px; white-space: nowrap; }
+.msg .errm { color: #ffb4a3; }
+.selinfo { font-size: 13px; color: var(--text); min-height: 1.3em; text-align: center; }
+/* big moments: « Descendu ! », « Teta Rose a fini ! », « Joker récupéré » */
+.banner { position: absolute; left: 50%; top: 45%; z-index: 15; translate: -50% -50%; pointer-events: none; font-family: var(--display); font-size: 34px; line-height: 1.1; color: var(--brass); background: rgba(5,20,15,.82); border: 1px solid rgba(217,167,72,.5); border-radius: 16px; padding: 12px 20px 8px; white-space: nowrap; text-align: center; max-width: 92%; overflow: hidden; text-overflow: ellipsis; }
+.banner.show { animation: bannerIn 1.3s ease-out both; }
+@keyframes bannerIn { 0% { opacity: 0; scale: .7; } 15% { opacity: 1; scale: 1.06; } 25% { scale: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+.morehint { position: absolute; left: 50%; bottom: 6px; translate: -50% 0; z-index: 4; pointer-events: none; font-size: 12px; font-weight: 700; color: var(--ink); background: var(--brass); border-radius: 999px; padding: 2px 10px; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+
+.actions { flex: none; display: flex; gap: 6px; }
+.actions .btn { flex: none; max-width: 100%; min-height: 44px; padding: 4px 14px; position: relative; font-size: 14px; line-height: 16px; white-space: normal; text-wrap: balance; }
+.btn { flex: 1 1 auto; min-width: 0; border: none; border-radius: 12px; padding: 12px 10px; font-weight: 700; font-size: 14px; cursor: pointer; background: rgba(255,255,255,.08); color: var(--text); }
+.btn.main { background: var(--brass); color: var(--ink); }
+.btn:disabled { opacity: .35; cursor: default; }
+.err { color: #ffb4a3; font-size: 13px; min-height: 1.2em; }
+
+/* overlays */
+.ov { position: fixed; inset: 0; background: rgba(5,20,15,.82); display: flex; align-items: center; justify-content: center; z-index: 20;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: max(16px, env(safe-area-inset-top, 0px)); }
+.ov:not([hidden]) .sheet { animation: sheetUp .25s ease-out both; }
+@keyframes sheetUp { from { opacity: 0; translate: 0 40px; } to { opacity: 1; translate: 0 0; } }
+#ovSetup.solid { background: var(--felt-deep); }
+.sheet { overscroll-behavior: contain; touch-action: pan-y; background: var(--felt-deep); border: 1px solid var(--felt-line); border-radius: 18px; padding: 18px; width: 100%; max-width: 440px; max-height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+.sheet h1, .sheet h2 { font-family: var(--display); font-weight: 400; margin: 0; color: var(--brass); line-height: 1.05; text-wrap: balance; }
+.sheet h1 { font-size: 44px; }
+.sheet h2 { font-size: 28px; }
+.sheet p { margin: 0; color: var(--muted); line-height: 1.45; }
+.field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.field input[type=text] { background: rgba(0,0,0,.25); border: 1px solid var(--felt-line); border-radius: 10px; padding: 10px; color: var(--text); font: inherit; font-size: 16px; }
+.seg { display: flex; gap: 6px; }
+.seg button { flex: 1; min-height: 44px; border: 1px solid var(--felt-line); background: transparent; border-radius: 10px; padding: 10px; cursor: pointer; color: var(--muted); }
+.seg button[aria-pressed=true] { background: var(--brass); color: var(--ink); border-color: var(--brass); font-weight: 700; }
+.opt { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; color: var(--text); min-height: 44px; padding: 4px 0; cursor: pointer; }
+.seg.small button { padding: 7px 4px; font-size: 13px; min-height: 44px; }
+.optrow { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--text); }
+details.house { border: 1px solid var(--felt-line); border-radius: 12px; padding: 10px 12px; }
+details.house summary { cursor: pointer; color: var(--text); font-size: 14px; min-height: 44px; display: flex; align-items: center; }
+details.house[open] summary { margin-bottom: 12px; }
+details.house .inner { display: flex; flex-direction: column; gap: 12px; }
+.src { font-size: 12px; color: var(--muted); line-height: 1.4; }
+.opt input { flex: none; margin: 3px 0 0; accent-color: var(--brass); width: 18px; height: 18px; }
+.opt small { display: block; color: var(--muted); font-size: 12px; }
+table.sc { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+table.sc th, table.sc td { padding: 6px 4px; border-bottom: 1px solid var(--felt-line); text-align: left; }
+table.sc td.n, table.sc th.n { text-align: right; }
+table.sc tr.win td { color: var(--brass); }
+table.sc tr.rw td { background: rgba(217,167,72,.1); }
+table.sc td small { color: var(--muted); }
+table.sc .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+table.sc tr.hasleft td { border-bottom: 0; padding-bottom: 2px; }
+table.sc tr.leftrow td { padding-top: 0; }
+table.sc .left { display: flex; padding-left: 16px; padding-right: 15px; }
+table.sc .left .card { --w: 30px; margin-right: -15px; box-shadow: 0 1px 3px rgba(0,0,0,.35); }
+table.sc .left .card .s, table.sc .left .card .jk { display: none; }
+.sheet-h { display: flex; align-items: flex-start; gap: 8px; position: sticky; top: -18px; background: var(--felt-deep); margin: -18px -18px 0; padding: 18px 18px 6px; z-index: 1; border-radius: 18px 18px 0 0; }
+.sheet-h h2 { flex: 1; }
+.xbtn { flex: none; width: 44px; height: 44px; margin: -8px -8px 0 0; border-radius: 50%; border: 0; background: rgba(255,255,255,.08); color: var(--text); font-size: 22px; line-height: 44px; cursor: pointer; }
+.menu-sort { display: flex; gap: 6px; align-items: center; }
+.menu-sort span { font-size: 14px; color: var(--muted); flex: none; margin-right: 4px; }
+.menu-sort .btn { min-height: 44px; }
+.switch { display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; }
+.switch::after { content: ""; flex: none; width: 40px; height: 24px; border-radius: 999px; background: rgba(255,255,255,.2) radial-gradient(circle at 12px 12px, var(--ivory) 8px, transparent 9px) no-repeat; transition: background .15s; }
+.switch[aria-checked=true]::after { background: var(--brass) radial-gradient(circle at 28px 12px, var(--ink) 8px, transparent 9px) no-repeat; }
+.burnline { color: #ff8a5c; font-size: 15px; display: flex; align-items: center; gap: 6px; font-weight: 700; }
+.burnline svg { width: 14px; height: 16px; flex: none; }
+.rules { font-size: 14px; color: var(--muted); line-height: 1.5; padding-left: 18px; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.rules b { color: var(--text); font-weight: 500; }
+/* very short screens (small Android inside the claude.ai frame): smaller portraits, the cards keep their size */
+@media (max-height: 700px) { .opp.portrait .nm { font-size: 11px; letter-spacing: -.02em; } .opp.portrait .ov-top, .opp.portrait .ov-bot { padding-left: 3px; padding-right: 3px; } }
+@media (max-height: 600px) { .app { --hw: var(--cw); } }
+@media (max-height: 600px) { .opps { --oh: 66px; } .opps .opp.portrait .ov-bot .row { display: none; } .opps .opp.portrait .sc { font-size: 16px; } .opps .nc { font-size: 11px; } .opp.portrait .photo .ini { font-size: 17px; margin-bottom: 14px; } .opp.portrait .stat { bottom: 17px; right: 3px; } .opp.portrait .ok { width: 13px; height: 13px; line-height: 13px; font-size: 9px; } }
+/* landscape phone: not supported yet, ask to turn the phone (the game is played one-handed, portrait) */
+.rotate { display: none; }
+@media (orientation: landscape) and (max-height: 500px) {
+  .rotate { display: flex; position: fixed; inset: 0; z-index: 60; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: var(--felt-deep); color: var(--text); font-size: 16px; text-align: center; padding: 24px; }
+  .rotate span { font-size: 44px; color: var(--brass); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card, .ghostwrap, .opp.portrait { transition: none; }
+  .opp.portrait.turn, #stock.live > .card, .meld.fresh, .ok.pop, .ov:not([hidden]) .sheet { animation: none; }
+  #stock.live > .card { box-shadow: 0 0 0 3px var(--brass), 0 4px 10px rgba(0,0,0,.4); }
+  .opp.portrait.turn { box-shadow: 0 0 0 2px var(--brass); }
+  .banner.show { animation: bannerFade 1.3s linear both; }
+}
+@keyframes bannerFade { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
+
+</style>
+
+<div class="app" id="app">
+  <header>
+    <div class="logo">Katorz <small id="roundLbl"></small></div>
+    <div class="sp"></div>
+    <button class="ghost" id="btnRules" type="button">Règles</button>
+    <button class="ghost" id="btnNew" type="button">Nouvelle</button>
+  </header>
+  <div class="opps" id="opps"></div>
+  <div class="tablewrap">
+    <div class="table" id="table" tabindex="0" role="button" aria-label="Table : touche-la pour poser les cartes choisies"></div>
+    <div class="morehint" id="moreHint" hidden></div>
+    <div class="banner" id="banner" aria-live="polite" hidden></div>
+  </div>
+  <div class="mid">
+    <div class="me" id="me"></div>
+    <button class="pile" id="stock" type="button" aria-label="Piocher"><div class="card back pilec"></div><span class="cnt" id="stockCnt">0</span></button>
+    <button class="pile" id="discard" type="button" aria-label="Fosse"></button>
+    <div class="drawn" id="drawn" hidden></div>
+    <div class="side" id="side"><div class="msg" id="msg" aria-live="polite"></div><div class="actions" id="actions"></div></div>
+  </div>
+  <div class="hand" id="hand"></div>
+</div>
+
+<div class="ov" id="ovSetup" hidden>
+  <form class="sheet" id="setup">
+    <h1>Katorz</h1>
+    <p>Le 14 libanais : deux jeux, deux jokers, 51 points pour descendre.</p>
+    <label class="field">Ton prénom <input type="text" id="pname" maxlength="14" placeholder="Ton prénom" autocomplete="off"></label>
+    <div class="field">Adversaires (joués par l'ordinateur)
+      <div class="seg" id="nOpp"><button type="button" data-n="1">1</button><button type="button" data-n="2">2</button><button type="button" data-n="3" aria-pressed="true">3</button><button type="button" data-n="4">4</button></div>
+    </div>
+    <div class="field">Règles
+      <div class="seg" id="preset"><button type="button" data-v="classique" aria-pressed="true">Règles classiques</button><button type="button" data-v="maison">Règles de la maison</button></div>
+      <small class="src" id="presetTxt"></small>
+    </div>
+    <button class="btn main" type="submit" id="go">Commencer la partie</button>
+    <button class="btn" type="button" id="cancelSetup">Revenir à la partie</button>
+    <button class="ghost" type="button" id="setupRules" style="align-self:center;min-height:44px;padding:0 16px">Les règles du 14</button>
+  </form>
+</div>
+
+<div class="rotate" aria-live="polite"><span aria-hidden="true">↻</span>Tourne ton téléphone pour jouer.</div>
+<div class="ov" id="ovMenu" hidden>
+  <div class="sheet">
+    <h2>Katorz <small id="menuRound" style="font-family:var(--body);font-size:14px;color:var(--muted)"></small></h2>
+    <div class="menu-list">
+      <div class="menu-sort" id="mSort"><span>Trier ma main</span><button class="btn" type="button" data-sort="suit">Par signe</button><button class="btn" type="button" data-sort="rank">Par valeur</button></div>
+      <button class="btn switch" type="button" id="mFx" role="switch" aria-checked="true">Sons et vibrations</button>
+      <button class="btn" type="button" id="mRules">Règles</button>
+      <button class="btn" type="button" id="mCam" data-cam="0">Ta caméra</button>
+      <button class="btn" type="button" id="mNew">Nouvelle partie</button>
+      <button class="btn main" type="button" id="mClose">Revenir à la table</button>
+    </div>
+  </div>
+</div>
+<div class="ov" id="ovCam" hidden>
+  <div class="sheet">
+    <h2 id="camName">Caméra</h2>
+    <div class="camframe v0" id="camFrame"><span id="camIni"></span></div>
+    <p id="camTxt"></p>
+    <button class="btn main" type="button" id="closeCam">Revenir à la table</button>
+  </div>
+</div>
+<div class="ov" id="ovRound" hidden><div class="sheet" id="roundSheet"></div></div>
+<div class="ov" id="ovRules" hidden>
+  <div class="sheet">
+    <div class="sheet-h"><h2 id="rulesTitle">Règles classiques</h2><button class="xbtn" type="button" id="closeRulesX" aria-label="Fermer les règles">×</button></div>
+    <ol class="rules" id="rulesC">
+      <li><b>Cartes :</b> deux jeux de 52 et deux jokers, 106 cartes. 14 cartes chacun ; celui qui commence en a 15 : lui ne pioche pas, il jette. De 2 à 5 joueurs.</li>
+      <li><b>Tes cartes :</b> touche une carte pour la choisir. Glisse-la dans ta main pour la ranger, sur la fosse pour la jeter, sur la table pour poser ou compléter. Tu peux aussi toucher tes cartes, puis toucher la table ou la fosse.</li>
+      <li><b>À ton tour :</b> pioche, ou prends la dernière carte de la fosse si tu en fais tout de suite une nouvelle combinaison avec au moins 2 cartes de ta main. Termine toujours en jetant une carte (tu peux jeter un joker).</li>
+      <li><b>Combinaisons :</b> 3 ou 4 cartes de même valeur, toutes de signes différents (♠ ♥ ♦ ♣), ou au moins 3 cartes qui se suivent dans le même signe. L'as va avant le 2 ou après le roi, pas les deux.</li>
+      <li><b>Descendre :</b> la première fois, tes combinaisons doivent faire au moins 51 points en un tour : figures 10, as 11 (même dans A-2-3), le joker vaut la carte qu'il remplace.</li>
+      <li><b>Le joker :</b> un seul par combinaison, dans un brelan ou une suite, à tout moment.</li>
+      <li><b>Ensuite :</b> pose ce que tu veux, complète les combinaisons de la table, ou récupère un joker en posant la vraie carte à sa place. Dans un brelan de 3 cartes (7 7 ★), il faut les 2 cartes qui manquent.</li>
+      <li><b>Fin de manche :</b> dès qu'un joueur jette sa dernière carte (jamais à son premier tour). Lui marque −30, ou −60 s'il a tout posé d'un coup sans être descendu avant : les autres comptent alors double. Pas descendu : 100. Les autres comptent leurs cartes : figures 10, as 11, joker <span class="rJok">25</span>.</li>
+      <li><b>Éliminé :</b> à 201 points, tu sors de la partie. Le dernier qui reste gagne (si tous sortent dans la même manche, le plus petit score gagne).</li>
+    </ol>
+    <ol class="rules" id="rulesM" hidden>
+      <li><b>Cartes :</b> deux jeux de 52 et deux jokers, 106 cartes. 14 cartes chacun ; celui qui commence en a 15 : lui ne pioche pas, il jette. De 2 à 5 joueurs.</li>
+      <li><b>Tes cartes :</b> touche une carte pour la choisir. Glisse-la dans ta main pour la ranger, sur la fosse pour la jeter, sur la table pour poser ou compléter. Tu peux aussi toucher tes cartes, puis toucher la table ou la fosse.</li>
+      <li><b>À ton tour :</b> pioche, ou prends la dernière carte de la fosse si tu en fais tout de suite une nouvelle combinaison avec au moins 2 cartes de ta main. Termine toujours en jetant une carte (tu peux jeter un joker).</li>
+      <li><b>Combinaisons :</b> 3 ou 4 cartes de même valeur, toutes de signes différents (♠ ♥ ♦ ♣), ou au moins 3 cartes qui se suivent dans le même signe. L'as va avant le 2 ou après le roi, pas les deux.</li>
+      <li><b>Descendre :</b> la première fois, tes combinaisons doivent faire au moins 51 points : figures 10, as 11, ou 1 dans A-2-3 ; le joker vaut la carte qu'il remplace.</li>
+      <li><b>Le joker :</b> un seul par combinaison, dans un brelan, à tout moment (7 7 ★). Dans une suite, ou deux jokers ensemble : seulement sur le coup qui te fait finir (après lui, il ne te reste que la carte à jeter).</li>
+      <li><b>Ensuite :</b> pose ce que tu veux, complète les combinaisons de la table, ou récupère un joker en posant la vraie carte à sa place. Dans un brelan de 3 cartes (7 7 ★), il faut les 2 cartes qui manquent.</li>
+      <li><b>Fin de manche :</b> dès qu'un joueur jette sa dernière carte (jamais à son premier tour). Lui marque 0, les autres comptent leurs cartes : figures 10, as 11 (1 s'il est seul en main), joker <span class="rJok">25</span>.</li>
+      <li><b>Brûler :</b> à 201 points, tu reprends le score le plus haut des joueurs encore sous 201. La partie s'arrête quand il ne reste qu'un joueur sous 201 : il gagne.</li>
+    </ol>
+    <p>Les règles se choisissent dans « Nouvelle partie » : classiques ou de la maison.</p>
+    <button class="btn main" type="button" id="closeRules">Compris</button>
+  </div>
+</div>
+
+<script>
+// ===== Katorz engine: Lebanese 14 (Quatorze) — pure logic, no DOM =====
+const K = (() => {
+  const SUITS = ['S', 'H', 'D', 'C'];
+  // Two rule sets, chosen once in « Nouvelle partie » (no individual toggles). Jokers are the only wild cards in both.
+  //  · libanais = the Lebanese 14 as the families play it (answers of the Nahed-Aad and Maklouf families and of Jess's
+  //    father, Wikipedia « Quatorze » where they said nothing), default: ONE joker per combination
+  //  · famille  = Ryan's family, the same for now except: no « plus » rule, jokers may be thrown, and two jokers in one
+  //    combination on the finishing play (until the family's questionnaire comes back)
+  // Two points where the families are tied (Nahed-Aad against Younes), waiting for Ryan's family: flip ONE constant each.
+  const TAKEN_CARD_MAY_COMPLETE = false; // true: the card taken from the fosse may also complete a table combination
+  const NO_THROWING_A_FITTING_CARD = true; // true: « règle du plus », a card that goes on the table may not be thrown
+  const BASE = {
+    burnAt: 201, openMin: 51, finishNoDiscard: false, noFirstTurnFinish: true, refill: true,
+    aceLow: 1,               // A-2-3 = 6; D-R-A: the ace is 11
+    aceHand: 10, aceAloneOne: true, // an ace left in hand counts 10, 1 when it is the last card
+    jokerPenalty: 25, annPenalty: 2, // a joker left in hand: 25, or 2 if it was announced
+    jokerRunFinish: true,    // a joker in a run: only on the finishing play
+    relayJoker: true,        // a joker won back from the table must be laid again before the discard
+    cardCalls: true,         // « trois cartes / deux cartes / une carte »: whoever keeps 3 cards or fewer after his discard
+                             // must say so before the next player plays; forgotten → he cannot finish on his next turn
+    notDown100: true,        // never down at the end of the round: 100; the one who finishes: 0
+    end: 'burn',             // reaching 201 = take the highest score under 201; the last one under 201 wins
+  };
+  const PRESETS = {
+    libanais: { plusRule: NO_THROWING_A_FITTING_CARD, takenCompletes: TAKEN_CARD_MAY_COMPLETE, noJokerDiscard: true, oneJoker: true, twoJokersFinish: false },
+    famille: { plusRule: false, noJokerDiscard: false, oneJoker: false, twoJokersFinish: true },
+  };
+  const OLD = { classique: 'libanais', maison: 'famille' }; // saves made before the « Règles libanaises »
+  const DEFAULT_OPTS = { ...BASE, ...PRESETS.libanais, preset: 'libanais' };
+  // options of a game. A game of this version keeps its own values for ever (normOpts is called again at every round
+  // end and every load: a later change of a preset never changes a game in progress). A save made before the Lebanese
+  // rules (« classique » / « maison ») or without a preset switches once to the new rule set (Ryan's decision).
+  const KNOWN = Object.keys({ ...BASE, ...PRESETS.libanais, ...PRESETS.famille });
+  function normOpts(o) {
+    o = o || {};
+    if (PRESETS[o.preset]) { const own = {}; KNOWN.forEach(k => { if (o[k] !== undefined) own[k] = o[k]; }); return { ...BASE, ...PRESETS[o.preset], ...own, preset: o.preset }; }
+    const preset = OLD[o.preset] || (Object.keys(o).length ? 'famille' : 'libanais');
+    return { ...BASE, ...PRESETS[preset], preset };
+  }
+
+  // ---------- cards ----------
+  function makeDeck(rng) {
+    const d = [];
+    let id = 0;
+    for (let k = 0; k < 2; k++)
+      for (const s of SUITS)
+        for (let r = 1; r <= 13; r++) d.push({ id: id++, r, s });
+    d.push({ id: id++, r: 0, s: null });
+    d.push({ id: id++, r: 0, s: null });
+    for (let i = d.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [d[i], d[j]] = [d[j], d[i]];
+    }
+    return d;
+  }
+  const isJoker = c => c.r === 0;
+  // value of a position in a meld (positions: 1 = ace low, 2..13, 14 = ace high)
+  const posValue = (p, o) => (p === 1 ? ((o && o.aceLow) || 1) : p === 14 ? 11 : p >= 11 ? 10 : p);
+  const rankSetValue = r => (r === 1 ? 11 : r >= 11 ? 10 : r);
+  // a card left in hand: joker 25 (2 if its holder announced it), ace 10, figures 10
+  const handPenalty = (c, o, p) => (isJoker(c) ? (p && p.ann && p.ann.includes(c.id) ? o.annPenalty : o.jokerPenalty) : c.r === 1 ? o.aceHand : c.r >= 11 ? 10 : c.r);
+
+  // ---------- meld validation ----------
+  // returns {type, items:[{card, as:{p|r, s}}], value} or null
+  function validate(cards, o) {
+    if (cards.length < 3) return null;
+    const jokers = cards.filter(isJoker), nat = cards.filter(c => !isJoker(c));
+    if (!nat.length) return null; // MIN-NATURAL: 1 natural is enough today (7♠ ★ ★ accepted)
+    if (o.oneJoker && jokers.length > 1) return null;
+    const res = [];
+    const s = asSet(nat, jokers); if (s) res.push(s);
+    const r = (o.noJokerRuns && jokers.length) ? null : asRun(nat, jokers, o); if (r) res.push(r);
+    if (!res.length) return null;
+    res.sort((a, b) => b.value - a.value);
+    return res[0];
+  }
+  function asSet(nat, jokers) {
+    const r = nat[0].r;
+    if (nat.some(c => c.r !== r)) return null;
+    const suits = new Set(nat.map(c => c.s));
+    if (suits.size !== nat.length) return null;
+    const len = nat.length + jokers.length;
+    if (len > 4) return null;
+    const items = nat.map(c => ({ card: c, as: { r, s: c.s } }));
+    const missing = SUITS.filter(x => !suits.has(x));
+    jokers.forEach((j, i) => items.push({ card: j, as: { r, s: missing[i] || null, free: true } }));
+    return { type: 'set', items, value: rankSetValue(r) * len, rank: r };
+  }
+  function asRun(nat, jokers, o) {
+    const suit = nat[0].s;
+    if (nat.some(c => c.s !== suit)) return null;
+    let best = null;
+    for (const aceHigh of [false, true]) {
+      const pos = nat.map(c => (c.r === 1 ? (aceHigh ? 14 : 1) : c.r));
+      if (new Set(pos).size !== pos.length) continue;
+      const sorted = pos.slice().sort((a, b) => a - b);
+      let min = sorted[0], max = sorted[sorted.length - 1];
+      const span = max - min + 1;
+      const gaps = span - pos.length;
+      if (gaps > jokers.length) continue;
+      let extra = jokers.length - gaps;
+      const hi = sorted.includes(1) ? 13 : 14, lo = sorted.includes(14) ? 2 : 1;
+      while (extra > 0 && max < hi) { max++; extra--; }
+      while (extra > 0 && min > lo) { min--; extra--; }
+      if (extra > 0) continue;
+      const items = [];
+      let jk = 0;
+      for (let p = min; p <= max; p++) {
+        const i = pos.indexOf(p);
+        if (i >= 0) items.push({ card: nat[i], as: { p, s: suit } });
+        else items.push({ card: jokers[jk++], as: { p, s: suit } });
+      }
+      const value = items.reduce((t, it) => t + posValue(it.as.p, o), 0);
+      if (!best || value > best.value) best = { type: 'run', items, value, suit };
+    }
+    return best;
+  }
+
+  // try to add natural/joker cards to an existing table meld (table jokers keep their place)
+  function extend(meld, add, o) {
+    const jokersNow = meld.items.filter(it => isJoker(it.card)).length;
+    const addJ = add.filter(isJoker), addN = add.filter(c => !isJoker(c));
+    if (o.oneJoker && jokersNow + addJ.length > 1) return null;
+    if (meld.type === 'set') {
+      const len = meld.items.length + add.length;
+      if (len > 4) return null;
+      if (addN.some(c => c.r !== meld.rank)) return null;
+      const natSuits = new Set(meld.items.filter(it => !isJoker(it.card)).map(it => it.card.s));
+      for (const c of addN) { if (natSuits.has(c.s)) return null; natSuits.add(c.s); }
+      // free jokers in set: a joker standing for a suit that a new natural now takes just moves to another suit
+      const items = meld.items.concat(addN.map(c => ({ card: c, as: { r: meld.rank, s: c.s } })));
+      addJ.forEach(j => items.push({ card: j, as: { r: meld.rank, s: null, free: true } }));
+      const used = new Set(items.filter(it => !isJoker(it.card)).map(it => it.card.s));
+      const missing = SUITS.filter(x => !used.has(x));
+      let m = 0;
+      items.forEach(it => { if (isJoker(it.card)) it.as = { r: meld.rank, s: missing[m++] || null, free: true }; });
+      return { ...meld, items, value: rankSetValue(meld.rank) * items.length };
+    }
+    // run
+    if (addN.some(c => c.s !== meld.suit)) return null;
+    const taken = new Map(meld.items.map(it => [it.as.p, it]));
+    const ps = [...taken.keys()];
+    let min = Math.min(...ps), max = Math.max(...ps);
+    const highMode = ps.includes(14), lowMode = ps.includes(1);
+    const newItems = [];
+    for (const c of addN) {
+      let options = c.r === 1 ? [1, 14] : [c.r];
+      options = options.filter(p => !taken.has(p) && !(p === 1 && highMode) && !(p === 14 && lowMode));
+      // must touch the run (or be closable by jokers being added)
+      if (!options.length) return null;
+      const p = options.sort((a, b) => Math.min(Math.abs(a - min), Math.abs(a - max)) - Math.min(Math.abs(b - min), Math.abs(b - max)))[0];
+      newItems.push({ card: c, as: { p, s: meld.suit } });
+      taken.set(p, newItems[newItems.length - 1]);
+    }
+    let jLeft = addJ.slice();
+    const all = [...taken.keys()].sort((a, b) => a - b);
+    min = all[0]; max = all[all.length - 1];
+    // fill gaps with new jokers
+    for (let p = min; p <= max; p++) {
+      if (!taken.has(p)) {
+        if (!jLeft.length) return null;
+        const it = { card: jLeft.shift(), as: { p, s: meld.suit } };
+        newItems.push(it); taken.set(p, it);
+      }
+    }
+    const hasLow = taken.has(1), hasHigh = taken.has(14);
+    if (hasLow && hasHigh) return null;
+    const hi = hasLow ? 13 : 14, lo = hasHigh ? 2 : 1;
+    while (jLeft.length && max < hi) { max++; const it = { card: jLeft.shift(), as: { p: max, s: meld.suit } }; newItems.push(it); taken.set(max, it); }
+    while (jLeft.length && min > lo) { min--; const it = { card: jLeft.shift(), as: { p: min, s: meld.suit } }; newItems.push(it); taken.set(min, it); }
+    if (jLeft.length) return null;
+    const items = [...taken.entries()].sort((a, b) => a[0] - b[0]).map(e => e[1]);
+    if (items.length > 13) return null;
+    return { ...meld, items, value: items.reduce((t, it) => t + posValue(it.as.p, o), 0) };
+  }
+
+  // swap a natural card for a table joker it stands for; returns {meld, joker} or null
+  // winning back a table joker. Runs: the real card it stands for. Sets: in a 4-card set one natural of a missing suit;
+  // in a 3-card set (7 7 ★) both missing naturals are needed (see swapJoker2)
+  function swapJoker(meld, card) {
+    if (isJoker(card)) return null;
+    if (meld.type === 'set' && meld.items.length < 4) return null;
+    const ji = meld.items.findIndex(it => isJoker(it.card));
+    if (ji < 0) return null;
+    const jit = meld.items[ji];
+    if (meld.type === 'run') {
+      if (card.s !== meld.suit) return null;
+      const p = jit.as.p;
+      const ok = card.r === 1 ? (p === 1 || p === 14) : card.r === p;
+      if (!ok) return null;
+      const items = meld.items.slice();
+      items[ji] = { card, as: { p, s: meld.suit } };
+      return { meld: { ...meld, items }, joker: jit.card };
+    }
+    if (card.r !== meld.rank) return null;
+    const natSuits = new Set(meld.items.filter(it => !isJoker(it.card)).map(it => it.card.s));
+    if (natSuits.has(card.s)) return null;
+    const items = meld.items.slice();
+    items[ji] = { card, as: { r: meld.rank, s: card.s } };
+    return { meld: { ...meld, items }, joker: jit.card };
+  }
+
+  // 2 naturals on a 3-card set with one joker (7♠ 7♥ ★ + 7♦ 7♣): the set becomes a natural carré and the joker comes back
+  function swapJoker2(meld, cards) {
+    if (meld.type !== 'set' || meld.items.length !== 3 || cards.length !== 2 || cards.some(c => isJoker(c) || c.r !== meld.rank)) return null;
+    const js = meld.items.filter(it => isJoker(it.card)); if (js.length !== 1) return null;
+    const suits = new Set(meld.items.filter(it => !isJoker(it.card)).map(it => it.card.s));
+    if (cards[0].s === cards[1].s || cards.some(c => suits.has(c.s))) return null;
+    const items = meld.items.filter(it => !isJoker(it.card)).concat(cards.map(c => ({ card: c, as: { r: meld.rank, s: c.s } })));
+    return { meld: { ...meld, items, value: rankSetValue(meld.rank) * 4 }, joker: js[0].card };
+  }
+
+  // ---------- bot search: best non-overlapping melds in a hand ----------
+  function candidates(hand, o) {
+    const out = [];
+    const jokers = hand.filter(isJoker), nat = hand.filter(c => !isJoker(c));
+    const maxJ = o.oneJoker ? Math.min(1, jokers.length) : jokers.length;
+    // sets
+    const byRank = {};
+    nat.forEach(c => (byRank[c.r] = byRank[c.r] || []).push(c));
+    for (const r in byRank) {
+      const bySuit = {};
+      byRank[r].forEach(c => { if (!bySuit[c.s]) bySuit[c.s] = c; });
+      const uniq = Object.values(bySuit);
+      const subsets = k => combos(uniq, k);
+      for (let k = 2; k <= Math.min(4, uniq.length); k++)
+        for (const sub of subsets(k)) {
+          if (k >= 3) push(sub);
+          for (let j = 1; j <= maxJ && k + j <= 4; j++) if (k + j >= 3) push(sub.concat(jokers.slice(0, j)));
+        }
+    }
+    // runs
+    const bySuit = {};
+    nat.forEach(c => (bySuit[c.s] = bySuit[c.s] || []).push(c));
+    for (const s in bySuit) {
+      const byPos = new Map();
+      bySuit[s].forEach(c => {
+        if (c.r === 1) { if (!byPos.has(1)) byPos.set(1, c); if (!byPos.has(14)) byPos.set(14, c); }
+        else if (!byPos.has(c.r)) byPos.set(c.r, c);
+      });
+      for (let a = 1; a <= 12; a++)
+        for (let b = a + 2; b <= Math.min(14, a + 12); b++) {
+          if (a === 1 && b === 14) continue;
+          const pick = [], miss = [];
+          for (let p = a; p <= b; p++) (byPos.has(p) ? pick.push(byPos.get(p)) : miss.push(p));
+          if (new Set(pick.map(c => c.id)).size !== pick.length) continue;
+          if (miss.length > maxJ) continue;
+          if (pick.length < 2) continue;
+          push(pick.concat(jokers.slice(0, miss.length)));
+        }
+    }
+    function push(cards) { const v = validate(cards, o); if (v) out.push({ cards, v }); }
+    return out;
+  }
+  function combos(arr, k) {
+    const res = [];
+    (function rec(start, acc) {
+      if (acc.length === k) { res.push(acc.slice()); return; }
+      for (let i = start; i < arr.length; i++) { acc.push(arr[i]); rec(i + 1, acc); acc.pop(); }
+    })(0, []);
+    return res;
+  }
+  // maxCards: at most this many cards may be used (a round ends with a discard, so one card must stay in hand)
+  function bestMelds(hand, o, mustInclude, maxCards = Infinity) {
+    const cands = candidates(hand, o).sort((a, b) => b.v.value - a.v.value);
+    let best = { total: 0, melds: [] }, nodes = 0;
+    (function rec(i, used, total, melds) {
+      if (++nodes > 30000) return;
+      const okMust = !mustInclude || melds.some(m => m.cards.some(c => c.id === mustInclude));
+      if (okMust && (total > best.total || (total === best.total && melds.length < best.melds.length))) best = { total, melds: melds.slice() };
+      for (let k = i; k < cands.length; k++) {
+        const c = cands[k];
+        if (used.size + c.cards.length > maxCards) continue;
+        if (c.cards.some(x => used.has(x.id))) continue;
+        c.cards.forEach(x => used.add(x.id));
+        melds.push(c);
+        rec(k + 1, used, total + c.v.value, melds);
+        melds.pop();
+        c.cards.forEach(x => used.delete(x.id));
+      }
+    })(0, new Set(), 0, []);
+    return best;
+  }
+
+  // ---------- game state ----------
+  // each bot has a small style of its own (no option to set): how soon it goes down, how often it hesitates, whether it
+  // keeps a combination in hand for a turn, how keen it is on the fosse, how often it discards a less good card, and
+  // when it announces a joker. Seat 0 (you) and old saves have no style: the plain, exhaustive bot.
+  const STYLES = {
+    1: { openTurn: 3, hesitate: 0.35, holdMeld: 0.45, missLay: 0.35, take: 0.4, noise: 0.06, annCards: 4, rushAt: 2 },               // Teta Rose: prudente
+    2: { openTurn: 2, hesitate: 0.25, minOpen: 62, holdMeld: 0.25, missLay: 0.2, take: 0.6, noise: 0.04, annCards: 2, rushAt: 2 },  // Abou Elie: gourmand
+    3: { openTurn: 2, hesitate: 0.2, holdMeld: 0.2, missLay: 0.25, take: 0.5, noise: 0.06, annCards: 3, rushAt: 2 },                 // Tante Mona: vive
+    4: { openTurn: 3, hesitate: 0.45, holdMeld: 0.4, missLay: 0.45, take: 0.3, noise: 0.08, annCards: 5, rushAt: 1 },                // Jeddo Fouad: distrait
+    5: { openTurn: 2, hesitate: 0.3, holdMeld: 0.3, missLay: 0.3, take: 0.45, noise: 0.06, annCards: 3, rushAt: 2 },                 // Ammo Sami
+  };
+  function newGame(names, opts, seed) {
+    const o = normOpts(opts);
+    const g = {
+      o, seed: seed || Math.floor(Math.random() * 1e9),
+      players: names.map((n, i) => ({ name: n, bot: i > 0, score: 0, burns: 0, style: i > 0 ? i : 0 })),
+      dealer: names.length - 1, round: 0, history: [], over: false, winner: null,
+    };
+    return g;
+  }
+  function rngFrom(seed) { let s = seed >>> 0; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
+  // a bot's private dice: reproducible from the game state (same seed, same game), different for each decision
+  function chance(g, salt) {
+    let n = (g.seed ^ Math.imul(g.round + 1, 0x9e3779b1) ^ Math.imul(g.turn + 7, 0x85ebca6b) ^ Math.imul((cur(g).turns || 0) + 3, 0xc2b2ae35) ^ Math.imul(salt + 11, 0x27d4eb2d)) >>> 0;
+    n ^= n >>> 16; n = Math.imul(n, 0x7feb352d) >>> 0; n ^= n >>> 15; n = Math.imul(n, 0x846ca68b) >>> 0; n ^= n >>> 16;
+    return (n >>> 0) / 4294967296;
+  }
+
+  const nextIn = (g, i) => { const n = g.players.length; for (let k = 1; k <= n; k++) { const j = (i + k) % n; if (!g.players[j].out) return j; } return i; };
+  function startRound(g) {
+    g.round++;
+    g.prevDealer = g.dealer;
+    g.dealer = nextIn(g, g.dealer);
+    const rng = rngFrom(g.seed + g.round * 7919);
+    const deck = makeDeck(rng);
+    const first = nextIn(g, g.dealer);
+    g.players.forEach(p => { p.hand = []; p.turns = 0; p.lastThrown = null; p.opened = false; p.openedThisTurn = false; p.laidOnOthers = false; p.wasOpenAtTurnStart = false; p.ann = []; p.callNeed = 0; p.lastCall = 0; p.noFinish = false; });
+    for (let i = 0; i < 14; i++) g.players.forEach(p => { if (!p.out) p.hand.push(deck.pop()); });
+    g.players[first].hand.push(deck.pop());
+    g.stock = deck; g.discard = []; g.table = []; g.meldSeq = 0;
+    g.turn = first; g.phase = 'play'; g.firstTurn = true; // first player has 15 and only discards (may lay down)
+    g.tookDiscard = null; g.staging = []; g.roundOver = false; g.log = []; g.relay = null; g.refills = 0;
+    beginTurn(g, true);
+  }
+  function beginTurn(g, first) {
+    const p = g.players[g.turn];
+    p.wasOpenAtTurnStart = p.opened; p.openedThisTurn = false; p.laidOnOthers = false; p.turns = (p.turns || 0) + 1;
+    // a count of cards not announced after your last discard: you cannot finish this turn
+    p.noFinish = !!p.callNeed; p.callNeed = 0;
+    g.tookDiscard = null; g.takenOnTable = false; g.staging = []; g.relay = null;
+    g.phase = first ? 'play' : 'draw';
+    if (!first && !g.stock.length && g.discard.length <= 1) voidRound(g); // nothing left to draw: the round is cancelled
+  }
+  // stock and fosse both exhausted: the round ends with no score and the same dealer deals again
+  function voidRound(g) {
+    g.roundOver = true; g.phase = 'roundEnd';
+    if (g.prevDealer != null) g.dealer = g.prevDealer;
+    const entry = { round: g.round, winner: -1, void: true, rows: g.players.map(() => ({ pts: 0, note: 'manche annulée' })), burned: [] };
+    g.history.push(entry); g.lastRound = entry;
+  }
+  function cur(g) { return g.players[g.turn]; }
+  // cards that must stay in hand after a lay: 1 (the final discard) + 1 more on your own first turn (no going out on it)
+  const firstTurnOf = g => g.o.noFirstTurnFinish && cur(g).turns === 1;
+  const keep = g => (g.o.finishNoDiscard ? 0 : 1) + (firstTurnOf(g) || cur(g).noFinish ? 1 : 0);
+  const keepMsg = g => (firstTurnOf(g) ? 'Pas de fin au premier tour : garde 2 cartes.' : cur(g).noFinish ? 'Pas annoncé : pas de fin ce tour, garde 2 cartes.' : 'Garde une carte : on finit toujours en jetant.');
+  const TAKEN_NEW_MSG = 'La carte prise va dans une nouvelle combinaison.';
+  const TAKEN_MSG = 'Pose d\'abord la carte prise.';
+  const RELAY_MSG = 'Repose d\'abord le joker récupéré.';
+  const FINISH_PEND_MSG = 'Pose le reste : ce joker sert à finir.';
+  // the taken card is « pending » until it reaches the table (a joker won back later does not make it pending again)
+  const takenInHand = g => g.tookDiscard != null && !g.takenOnTable && cur(g).hand.some(c => c.id === g.tookDiscard);
+  // a card leaves a hand: an announcement only lasts while the joker stays in that hand
+  const leave = (p, id) => { if (p.ann && p.ann.length) p.ann = p.ann.filter(x => x !== id); };
+  // the stock is empty: the fosse (but its top card) is shuffled into a new stock. After 3 reshuffles in one round the
+  // cards left are dead (nobody can use them): the round is cancelled instead of going round in circles
+  function refill(g) {
+    if (g.stock.length) return;
+    if ((g.refills = (g.refills || 0) + 1) > 3) return;
+    const top = g.discard.pop();
+    const rng = rngFrom(g.seed + g.round * 31 + g.discard.length);
+    const d = g.discard; g.discard = top ? [top] : [];
+    for (let i = d.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [d[i], d[j]] = [d[j], d[i]]; }
+    g.stock = d;
+  }
+  function drawStock(g) {
+    if (g.phase !== 'draw') return 'Tu as déjà pioché.';
+    refill(g);
+    if (!g.stock.length) { voidRound(g); return null; }
+    const c = g.stock.pop(); cur(g).hand.push(c); g.phase = 'play'; g.lastDrawn = c.id;
+    return null;
+  }
+  function takeDiscard(g) {
+    if (g.phase !== 'draw') return 'Tu as déjà pioché.';
+    const c = g.discard[g.discard.length - 1];
+    if (!c) return 'La fosse est vide.';
+    g.discard.pop(); cur(g).hand.push(c); g.tookDiscard = c.id; g.phase = 'play'; g.lastDrawn = c.id; g.actedSinceTake = false; g.takenOnTable = false;
+    return null;
+  }
+  function giveBackDiscard(g) {
+    const p = cur(g);
+    if (g.tookDiscard == null) return 'Rien à rendre.';
+    const i = p.hand.findIndex(c => c.id === g.tookDiscard);
+    if (i < 0 || g.takenOnTable) return 'Cette carte est déjà posée.';
+    if (g.actedSinceTake) return 'Tu as déjà joué : pose la carte prise.'; // no peeking: play, then give the card back
+    if (g.staging.length) unstageAll(g);
+    leave(p, g.tookDiscard);
+    g.discard.push(p.hand.splice(i, 1)[0]); g.tookDiscard = null; g.phase = 'draw';
+    return null;
+  }
+  const take = (p, ids) => ids.map(id => { const i = p.hand.findIndex(c => c.id === id); if (i < 0) throw new Error('carte absente'); leave(p, id); return p.hand.splice(i, 1)[0]; });
+
+  // ---------- the joker announced ----------
+  // at any moment of your turn you may announce a joker you hold: if it is still in your hand at the end of the round it
+  // counts 2 instead of 25. Everyone sees it (badge on the portrait).
+  function announce(g, id) {
+    const p = cur(g);
+    if (g.roundOver) return 'La manche est finie.';
+    const c = p.hand.find(x => x.id === id);
+    if (!c || !isJoker(c)) return 'Seul un joker s\'annonce.';
+    p.ann = p.ann || [];
+    if (p.ann.includes(id)) return 'Ce joker est déjà annoncé.';
+    p.ann.push(id);
+    return null;
+  }
+  // « deux cartes ! »: player i says how many cards he keeps (allowed until the next player has played)
+  const CALLS = { 1: 'une carte', 2: 'deux cartes', 3: 'trois cartes' };
+  function callCards(g, i) {
+    const p = g.players[i];
+    if (!p || !p.callNeed) return 'Rien à annoncer.';
+    p.lastCall = p.callNeed; p.callNeed = 0;
+    return null;
+  }
+  const annCount = p => (p.ann || []).filter(id => p.hand.some(c => c.id === id)).length;
+  const isAnnounced = (p, id) => !!(p.ann && p.ann.includes(id));
+
+  // ---------- laying ----------
+  // a combination legal only as the finishing play (a joker in a run, two jokers): it may wait « pending » in the same
+  // turn, whatever the order of the lays, and reaches the table once only the final discard is left in hand
+  const finishOnly = g => m => { const j = m.items.filter(it => isJoker(it.card)).length; return (g.o.jokerRunFinish && m.type === 'run' && j > 0) || (g.o.twoJokersFinish && j > 1); };
+  const committable = g => m => !finishOnly(g)(m) || cur(g).hand.length <= 1;
+  // points that count to go down: the pending combinations, a finishing-only one only once it really finishes
+  function stagingTotal(g) { return g.staging.filter(committable(g)).reduce((t, m) => t + m.value, 0); }
+  const pendingFinish = g => g.staging.some(m => !committable(g)(m));
+  // once down, pending finishing-only combinations go to the table as soon as only the final discard is left
+  function settle(g) {
+    const p = cur(g);
+    if (!p.opened || !g.staging.length || p.hand.length > 1) return;
+    g.staging.forEach(m => { g.table.push(m); if (g.tookDiscard != null && m.items.some(it => it.card.id === g.tookDiscard)) g.takenOnTable = true; });
+    g.staging = []; if (g.tookDiscard != null) g.actedSinceTake = true;
+  }
+  // lay a combination: opened → table directly; not opened → pending until 51
+  function lay(g, ids) {
+    const p = cur(g);
+    if (g.phase !== 'play') return 'Pioche d\'abord, ou prends la fosse.';
+    const cards = ids.map(id => p.hand.find(c => c.id === id));
+    if (cards.some(c => !c)) return 'Carte introuvable.';
+    let v = validate(cards, g.o);
+    if (!v) return describeInvalid(cards, g.o);
+    if (p.hand.length - cards.length < keep(g)) return keepMsg(g);
+    let wait = false;
+    // jokers: in a run, or two together, only on the finishing play (after it, only the final discard remains)
+    if (!finishing(g, cards.length)) {
+      const v2 = validate(cards, everyday(g.o));
+      if (v2) v = v2;
+      else if (firstTurnOf(g)) return cards.filter(isJoker).length > 1 ? JOKER2_MSG : JOKER_RUN_MSG;
+      else wait = true; // it waits: lay the rest, then it goes down with the finishing play
+    }
+    // TAKEN-CARD: once down, the card taken from the fosse is played first (no laying other cards and then giving it back)
+    if (p.opened && takenInHand(g) && !ids.includes(g.tookDiscard)) return TAKEN_MSG;
+    take(p, ids);
+    const meld = { id: ++g.meldSeq, owner: g.turn, ...v };
+    if (p.opened && !wait) { g.table.push(meld); if (g.tookDiscard != null) { g.actedSinceTake = true; if (ids.includes(g.tookDiscard)) g.takenOnTable = true; } }
+    else g.staging.push(meld);
+    settle(g);
+    return null;
+  }
+  function unstage(g, meldId) {
+    const i = g.staging.findIndex(m => m.id === meldId);
+    if (i < 0) return;
+    const m = g.staging.splice(i, 1)[0];
+    m.items.forEach(it => cur(g).hand.push(it.card));
+  }
+  function unstageAll(g) { while (g.staging.length) unstage(g, g.staging[0].id); }
+  function openUp(g) {
+    const p = cur(g);
+    if (p.opened) return 'C\'est déjà fait.';
+    const t = stagingTotal(g);
+    if (t < g.o.openMin) return `Encore ${g.o.openMin - t} pour descendre.`;
+    if (takenInHand(g)) return TAKEN_MSG; // going down with the taken card still in hand would let you give it back afterwards
+    const ok = committable(g), go = g.staging.filter(ok);
+    if (g.tookDiscard != null && go.some(m => m.items.some(it => it.card.id === g.tookDiscard))) g.takenOnTable = true;
+    go.forEach(m => g.table.push(m)); g.staging = g.staging.filter(m => !ok(m));
+    p.opened = true; p.openedThisTurn = true; if (g.tookDiscard != null) g.actedSinceTake = true;
+    settle(g);
+    return null;
+  }
+  const JOKER_RUN_MSG = 'Joker en suite : seulement pour finir.';
+  const JOKER2_MSG = '2 jokers ensemble : seulement pour finir.';
+  // the finishing play: after it exactly the final discard remains (keep() already forbids it on your first turn)
+  const finishing = (g, n) => cur(g).hand.length - n <= 1;
+  // the rules of an ordinary (non-finishing) play: one joker per combination, none in a run
+  const everyday = o => ({ ...o, oneJoker: o.oneJoker || o.twoJokersFinish, noJokerRuns: o.jokerRunFinish });
+  // can these cards go on table meld mi? returns the extended meld or an error text (nothing is changed)
+  function addCheck(g, cards, mi) {
+    const p = cur(g);
+    if (p.hand.length - cards.length < keep(g)) return keepMsg(g);
+    const tm = g.table[mi], addJ = cards.filter(isJoker).length, meldJ = tm.items.filter(it => isJoker(it.card)).length;
+    if (g.o.oneJoker && addJ && meldJ + addJ > 1) return 'Un seul joker par combinaison.';
+    if (addJ && !finishing(g, cards.length)) {
+      if (g.o.jokerRunFinish && tm.type === 'run') return JOKER_RUN_MSG;
+      if (g.o.twoJokersFinish && meldJ + addJ > 1) return JOKER2_MSG;
+    }
+    const ext = extend(tm, cards, g.o);
+    if (!ext) return cards.length === 1 ? `${cardLabel(cards[0])} ne va pas sur cette combinaison.` : 'Ces cartes ne vont pas sur cette combinaison.';
+    return ext;
+  }
+  // where can the joker just won back go again, right now? {kind: 'add', meldId} | {kind: 'lay', ids} | null
+  function relayPlan(g, jid) {
+    const p = cur(g), j = p.hand.find(c => c.id === jid);
+    if (!j) return null;
+    for (let mi = 0; mi < g.table.length; mi++) if (typeof addCheck(g, [j], mi) !== 'string') return { kind: 'add', meldId: g.table[mi].id };
+    const room = p.hand.length - keep(g);
+    let m = bestMelds(p.hand, everyday(g.o), jid, room).melds.find(x => x.cards.some(c => c.id === jid));
+    if (!m) m = bestMelds(p.hand, g.o, jid, room).melds.find(x => x.cards.some(c => c.id === jid) && p.hand.length - x.cards.length <= 1);
+    return m ? { kind: 'lay', ids: m.cards.map(c => c.id) } : null;
+  }
+  const relayPending = g => g.o.relayJoker && g.relay != null && cur(g).hand.some(c => c.id === g.relay) && !!relayPlan(g, g.relay);
+  function addTo(g, ids, meldId) {
+    const p = cur(g);
+    if (!p.opened) return `Descends d'abord (${g.o.openMin} points) pour compléter.`;
+    const mi = g.table.findIndex(m => m.id === meldId);
+    if (mi < 0) return 'Combinaison introuvable.';
+    const cards = ids.map(id => p.hand.find(c => c.id === id));
+    if (!cards.length || cards.some(c => !c)) return 'Carte introuvable.';
+    if (takenInHand(g)) { // the card taken from the fosse
+      if (!g.o.takenCompletes) return ids.includes(g.tookDiscard) ? TAKEN_NEW_MSG : TAKEN_MSG;
+      if (!ids.includes(g.tookDiscard)) return TAKEN_MSG;
+    }
+    // joker swap first (the hand keeps its size: the joker comes back)
+    if (cards.length <= 2) {
+      const sw = cards.length === 1 ? swapJoker(g.table[mi], cards[0]) : swapJoker2(g.table[mi], cards);
+      if (sw) {
+        const old = g.table[mi];
+        take(p, ids); g.table[mi] = sw.meld; p.hand.push(sw.joker);
+        // the joker won back must go down again in the same turn: refuse a swap that leaves it nowhere to go
+        if (g.o.relayJoker && !relayPlan(g, sw.joker.id)) { g.table[mi] = old; p.hand.splice(p.hand.indexOf(sw.joker), 1); p.hand.push(...cards); return 'Pas de place pour reposer ce joker.'; }
+        if (g.o.relayJoker) g.relay = sw.joker.id;
+        if (g.table[mi].owner !== g.turn) p.laidOnOthers = true;
+        if (g.tookDiscard != null) { g.actedSinceTake = true; if (ids.includes(g.tookDiscard)) g.takenOnTable = true; }
+        return null;
+      }
+    }
+    const ext = addCheck(g, cards, mi);
+    if (typeof ext === 'string') return ext;
+    take(p, ids);
+    g.table[mi] = ext;
+    if (g.tookDiscard != null) { g.actedSinceTake = true; if (ids.includes(g.tookDiscard)) g.takenOnTable = true; }
+    if (ext.owner !== g.turn) p.laidOnOthers = true;
+    settle(g);
+    return null;
+  }
+  function discard(g, id) {
+    const p = cur(g);
+    if (g.phase !== 'play') return 'Pioche d\'abord, ou prends la fosse.';
+    if (g.staging.length) return p.opened ? FINISH_PEND_MSG : `Encore ${Math.max(1, g.o.openMin - stagingTotal(g))} pour descendre.`;
+    if (takenInHand(g)) return TAKEN_MSG;
+    const i = p.hand.findIndex(c => c.id === id);
+    if (i < 0) return 'Carte introuvable.';
+    const dc = p.hand[i];
+    if (relayPending(g)) return RELAY_MSG;
+    if (g.o.noJokerDiscard && isJoker(dc) && p.hand.some(c => !isJoker(c))) return 'On ne jette pas un joker.';
+    if (g.o.plusRule && p.opened && fitsTable(g, dc) && p.hand.some(c => !fitsTable(g, c) && !(g.o.noJokerDiscard && isJoker(c)))) return 'Cette carte va sur la table : pose-la.';
+    leave(p, dc.id);
+    p.lastThrown = dc; dc.by = g.turn;
+    g.discard.push(p.hand.splice(i, 1)[0]);
+    // 3 cards or fewer left (and a new count): it must be announced before the next player plays
+    const nLeft = p.hand.length;
+    if (g.o.cardCalls && nLeft >= 1 && nLeft <= 3 && nLeft !== p.lastCall) p.callNeed = nLeft;
+    g.firstTurn = false;
+    afterAction(g, true);
+    return null;
+  }
+  // called after a discard, or after any lay that empties the hand
+  function afterAction(g, discarded) {
+    const p = cur(g);
+    if (p.hand.length === 0 && !g.staging.length) { endRound(g); return; }
+    if (discarded) { g.turn = nextIn(g, g.turn); beginTurn(g, false); }
+  }
+  // only « finir sans jeter » can empty a hand without a discard; otherwise the discard itself ends the round
+  function checkOut(g) { const p = cur(g); if (p.hand.length === 0 && !g.staging.length) { endRound(g); return true; } return false; }
+
+  // the one who finishes marks 0; the others count their cards (joker 25, or 2 if announced; ace 10), 100 if never down.
+  // Whoever reaches 201 burns: he takes the highest score among those still under 201. The last one under 201 wins.
+  // The winner of a round marks 0, so he is always under 201 after it: every game ends.
+  function endRound(g) {
+    g.o = normOpts(g.o);
+    const o = g.o, w = g.turn;
+    const rows = g.players.map((p, i) => {
+      if (i === w) return { pts: 0, note: 'a fini' };
+      let pts = p.hand.reduce((t, c) => t + handPenalty(c, o, p), 0);
+      let note = `${p.hand.length} carte${p.hand.length > 1 ? 's' : ''} en main`;
+      if (o.aceAloneOne && p.hand.length === 1 && p.hand[0].r === 1) { pts = 1; note = 'un as seul en main'; }
+      if (!p.opened && o.notDown100) { pts = 100; note = 'pas descendu'; }
+      return { pts, note };
+    });
+    rows.forEach((r, i) => (g.players[i].score += r.pts));
+    const burned = [];
+    g.roundOver = true; g.phase = 'roundEnd';
+    const entry = { round: g.round, winner: w, rows, burned };
+    const under = g.players.filter(p => p.score < o.burnAt);
+    if (under.length >= 2) {
+      const top = Math.max(...under.map(p => p.score));
+      g.players.forEach((p, i) => { if (p.score >= o.burnAt) { burned.push({ i, from: p.score, to: top }); p.score = top; p.burns++; } });
+    } else { g.over = true; g.winner = g.players.indexOf(under[0]); entry.gameOver = true; }
+    g.history.push(entry);
+    g.lastRound = entry;
+  }
+
+  function describeInvalid(cards, o) {
+    if (cards.length < 3) return 'Il faut 3 cartes par combinaison.';
+    const j = cards.filter(isJoker).length;
+    if (o.oneJoker && j > 1) return 'Un seul joker par combinaison.';
+    if (j === cards.length) return 'Il faut au moins une vraie carte.';
+    const real = cards.filter(c => !isJoker(c));
+    if (real.every(c => c.r === real[0].r)) {
+      const dup = real.find((c, i) => real.findIndex(x => x.s === c.s) !== i);
+      if (dup) return `Deux ${cardLabel(dup)} : un seul de chaque signe.`;
+      if (cards.length > 4) return 'Pas plus de 4 cartes de même valeur.';
+    }
+    return 'Ni brelan (même valeur) ni suite (même signe).';
+  }
+
+  // ---------- bot turn: returns list of steps {kind, text, card?, pts?, n?} and mutates state ----------
+  // The plain bot (no style) is exhaustive: it sees every way to go down and lays everything at once. A styled bot plays
+  // more like a person: it seldom goes down before its 2nd or 3rd turn while nobody is down, sometimes does not see a
+  // descent at once, sometimes keeps a combination in hand for a turn, does not always take the fosse, and now and then
+  // discards a card that is not the very best. When someone is close to finishing, every bot plays at full strength.
+  function botTurn(g) {
+    if (g.roundOver) return [];
+    const p = cur(g), o = g.o, steps = [];
+    const name = p.name, me = g.turn, st = p.style ? STYLES[p.style] || null : null;
+    const others = g.players.filter((q, i) => i !== me && !q.out);
+    const rush = others.some(q => q.hand.length <= (st ? st.rushAt : 4)), downs = others.some(q => q.opened);
+    // will this bot go down this turn if it can? (decided once, before drawing, so it never takes the fosse for nothing)
+    let mayOpen = true;
+    if (st && !rush) {
+      if (!downs && p.turns < st.openTurn) mayOpen = false;
+      else if (chance(g, 1) < (downs ? st.hesitate / 2 : st.hesitate)) mayOpen = false;
+    }
+    const openNeed = st && st.minOpen && !rush && !downs && p.turns < 5 ? st.minOpen : o.openMin;
+    const holding = !!st && !rush && p.hand.length > 3 && chance(g, 3) < st.holdMeld;
+    const oB = everyday(o); // the finishing exception (bf below) is tried when it lets the bot go out
+    // draw
+    if (g.phase === 'draw') {
+      const top = g.discard[g.discard.length - 1];
+      let takeIt = false;
+      const room = p.hand.length + 1 - keep(g);
+      if (top && (!st || chance(g, 2) < st.take)) {
+        if (p.opened) {
+          if (!holding) { const b = bestMelds(p.hand.concat([top]), oB, top.id, room); if (b.melds.length) takeIt = true; }
+          if (o.takenCompletes && !isJoker(top) && fitsTable(g, top) && p.hand.length + 1 - 1 >= keep(g)) takeIt = true;
+        } else if (mayOpen) {
+          const b = bestMelds(p.hand.concat([top]), oB, top.id, room);
+          if (b.total >= openNeed && b.melds.some(m => m.cards.some(c => c.id === top.id))) takeIt = true;
+        }
+      }
+      if (takeIt) { takeDiscard(g); steps.push({ kind: 'take', card: cardLabel(top), text: `${name} prend ${cardLabel(top)} dans la fosse` }); }
+      else { drawStock(g); steps.push({ kind: 'draw', text: `${name} pioche` }); }
+      if (g.roundOver) { steps.push({ kind: 'void', text: 'Plus de cartes : manche annulée' }); return steps; }
+    }
+    // lay melds
+    const mustInc = g.tookDiscard, room = p.hand.length - keep(g);
+    let b = bestMelds(p.hand, oB, mustInc, room);
+    let finishAll = false;
+    if (o.jokerRunFinish || o.twoJokersFinish) {
+      const bf = bestMelds(p.hand, o, mustInc, room), used = bf.melds.reduce((t, m) => t + m.cards.length, 0);
+      if (p.hand.length - used <= 1 && (p.opened || bf.total >= o.openMin)) { b = bf; finishAll = true; }
+    } else { const used = b.melds.reduce((t, m) => t + m.cards.length, 0); finishAll = p.hand.length - used <= 1; }
+    const jr = m => (m.v && m.v.type === 'run' && m.cards.some(isJoker)) || m.cards.filter(isJoker).length > 1; // finishing-only melds
+    const hasTaken = m => mustInc != null && m.cards.some(c => c.id === mustInc);
+    // the meld with the taken card goes first, a finishing-only meld (joker run, 2 jokers) goes last
+    b.melds.sort((x, y) => (hasTaken(y) ? 1 : 0) - (hasTaken(x) ? 1 : 0) || (jr(x) ? 1 : 0) - (jr(y) ? 1 : 0));
+    if (!p.opened) {
+      if (b.total >= o.openMin && (mayOpen || finishAll || mustInc != null) && (b.total >= openNeed || finishAll || mustInc != null)) {
+        b.melds.forEach(m => lay(g, m.cards.map(c => c.id)));
+        const tot = stagingTotal(g);
+        if (openUp(g)) unstageAll(g); // could not go down after all: everything back in hand
+        else steps.push({ kind: 'open', pts: tot, text: `${name} descend avec ${tot} points` });
+      }
+    } else if (b.melds.length) {
+      // a person sometimes keeps a combination for a turn (never the one with the taken card, never when it finishes)
+      const toLay = holding && !finishAll ? b.melds.filter(hasTaken) : b.melds;
+      toLay.forEach(m => lay(g, m.cards.map(c => c.id)));
+      if (toLay.length) steps.push({ kind: 'lay', n: toLay.length, text: `${name} pose ${toLay.length > 1 ? toLay.length + ' combinaisons' : 'une combinaison'}` });
+    }
+    if (g.staging.length && p.opened) unstageAll(g);
+    let n = 0, sw = 0;
+    // the taken card did not make a new combination: it may complete one on the table (if the rules allow it)
+    if (takenInHand(g) && p.opened && o.takenCompletes) {
+      const tc = p.hand.find(c => c.id === g.tookDiscard);
+      for (const m of g.table) { const isSw = !!swapJoker(m, tc); if ((isSw || extend(m, [tc], o)) && !addTo(g, [tc.id], m.id)) { isSw ? sw++ : n++; break; } }
+    }
+    if (takenInHand(g)) {
+      giveBackDiscard(g); drawStock(g);
+      steps.push({ kind: 'draw', back: true, text: `${name} pioche` });
+      if (g.roundOver) { steps.push({ kind: 'void', text: 'Plus de cartes : manche annulée' }); return steps; }
+    }
+    // the joker won back goes down again at once (rule), wherever it can
+    const relay = () => { let k = 0; while (relayPending(g) && k++ < 4) { const pl = relayPlan(g, g.relay); if (!pl || (pl.kind === 'add' ? addTo(g, [g.relay], pl.meldId) : lay(g, pl.ids))) break; } };
+    // lay off & joker swaps (an addTo the rules refuse never counts as progress, so this loop always ends)
+    if (p.opened && (finishAll || !st || rush || chance(g, 4) >= st.missLay)) {
+      let changed = true, guard = 0;
+      while (changed && p.hand.length && guard++ < 60) {
+        changed = false;
+        for (const c of p.hand.slice()) {
+          if (isJoker(c)) continue;
+          for (const m of g.table) {
+            if (swapJoker(m, c)) { if (!addTo(g, [c.id], m.id)) { sw++; changed = true; relay(); break; } continue; }
+            if (extend(m, [c], o) && !addTo(g, [c.id], m.id)) { n++; changed = true; break; }
+          }
+          if (changed) break;
+        }
+      }
+      if (sw) steps.push({ kind: 'swap', n: sw, text: `${name} récupère un joker` });
+      if (n) steps.push({ kind: 'addto', n, text: `${name} complète ${n > 1 ? n + ' combinaisons' : 'une combinaison'}` });
+      // jokers recovered: try to lay again
+      const b2 = bestMelds(p.hand, oB, null, p.hand.length - keep(g));
+      if (b2.melds.length) b2.melds.forEach(m => lay(g, m.cards.map(c => c.id)));
+      // jokers in hand with nowhere to go: attach to a table meld
+      for (const c of p.hand.filter(isJoker)) for (const m of g.table) { if ((m.type === 'set' || !o.jokerRunFinish || p.hand.length <= 2) && extend(m, [c], o)) { addTo(g, [c.id], m.id); break; } }
+    }
+    relay();
+    if (g.staging.length && p.opened) unstageAll(g);
+    if (p.hand.length === 0) { endRound(g); steps.push({ kind: 'out', text: `${name} a fini la manche !` }); return steps; }
+    // announce a joker it cannot use: when it has few cards left, or when someone is about to finish
+    const annAt = st ? st.annCards : 3;
+    for (const c of p.hand.filter(isJoker)) {
+      if (!isAnnounced(p, c.id) && (p.hand.length - 1 <= annAt || others.some(q => q.hand.length <= 3)) && !announce(g, c.id)) steps.push({ kind: 'announce', text: `${name} annonce un joker` });
+    }
+    // discard
+    const d = chooseDiscard(p.hand, g, o, st && chance(g, 5) < st.noise);
+    steps.push({ kind: 'discard', card: cardLabel(d), text: `${name} jette ${cardLabel(d)}` });
+    if (discard(g, d.id)) {
+      // the chosen card is refused (rules): the first card that may go, as a last resort a clean state
+      const ok = p.hand.slice().some(c => !discard(g, c.id));
+      if (!ok) { unstageAll(g); g.relay = null; p.hand.slice().some(c => !discard(g, c.id)); }
+      const last = steps[steps.length - 1], t = p.lastThrown; if (t) { last.card = cardLabel(t); last.text = `${name} jette ${cardLabel(t)}`; }
+    }
+    if (g.roundOver) steps.push({ kind: 'out', text: `${name} a fini la manche !` });
+    else if (p.callNeed) { const k = p.callNeed; callCards(g, me); steps.push({ kind: 'call', n: k, text: `${name} : « ${CALLS[k]} »` }); }
+    return steps;
+  }
+  function fitsTable(g, c) { return !isJoker(c) && g.table.some(m => extend(m, [c], g.o) || swapJoker(m, c)); }
+  // the card to throw: the one that helps least (not in a combination, few neighbours, high value); with noise, the
+  // second choice (a person does not always find the best one). Forbidden cards (rules) are never chosen.
+  function chooseDiscard(hand, g, o, noise) {
+    const best = bestMelds(hand, o);
+    const inMeld = new Set(best.melds.flatMap(m => m.cards.map(c => c.id)));
+    const opened = g.players[g.turn].opened, scored = [];
+    for (const c of hand) {
+      if (isJoker(c) && hand.some(x => !isJoker(x))) continue;
+      let s = 0;
+      if (inMeld.has(c.id)) s += 100;
+      for (const d of hand) {
+        if (d.id === c.id || isJoker(d)) continue;
+        if (d.r === c.r && d.s !== c.s) s += 6;
+        if (d.s === c.s) { const gap = Math.abs(d.r - c.r); if (gap === 1) s += 5; else if (gap === 2) s += 3; }
+      }
+      if (g.table.some(m => extend(m, [c], o))) s += (o.plusRule && opened) ? 1000 : 2; // forbidden or feeds opponents
+      s -= handPenalty(c, o) / 4;
+      scored.push([s, c]);
+    }
+    scored.sort((a, b) => a[0] - b[0]);
+    if (!scored.length) return hand[0];
+    if (noise && scored.length > 1 && scored[1][0] < 100) return scored[1][1];
+    return scored[0][1];
+  }
+
+  // ---------- labels ----------
+  // face letters follow the phone's language: French V D R, otherwise (English, Arabic…) J Q K
+  const RANKS = { 1: 'A', 11: 'V', 12: 'D', 13: 'R', 14: 'A' };
+  function setFaces(lang) { const fr = /^fr\b/i.test(String(lang || '')); RANKS[11] = fr ? 'V' : 'J'; RANKS[12] = fr ? 'D' : 'Q'; RANKS[13] = fr ? 'R' : 'K'; return fr; }
+  const SUITCH = { S: '♠', H: '♥', D: '♦', C: '♣' };
+  function rankLabel(r) { return RANKS[r] || String(r); }
+  function cardLabel(c) { return c.r === 0 ? 'un joker' : rankLabel(c.r) + SUITCH[c.s]; }
+
+  return { DEFAULT_OPTS, PRESETS, STYLES, normOpts, swapJoker2, takenPending: g => takenInHand(g), SUITCH, newGame, startRound, beginTurn, drawStock, takeDiscard, giveBackDiscard, lay, unstage, unstageAll, openUp, addTo, discard, stagingTotal, pendingFinish, finishOnly: (g, m) => finishOnly(g)(m), botTurn, validate, extend, swapJoker, bestMelds, isJoker, rankLabel, cardLabel, setFaces, handPenalty, checkOut, cur, posValue, announce, callCards, CALLS, annCount, isAnnounced, relayPlan, relayPending, fitsTable };
+})();
+
+
+</script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const SAVE = 'katorz-v1', OPTS = 'katorz-opts', FXKEY = 'katorz-sound', NAMEKEY = 'katorz-name';
+  const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  const lsDel = k => { try { localStorage.removeItem(k); } catch (e) {} };
+  // face letters follow the phone's language: French → V D R, anything else → J Q K
+  K.setFaces(navigator.language || '');
+
+  // ---------- state ----------
+  let g = null, drawnId = null, sel = new Set(), order = [], arranging = false, lastSort = '', busy = false, nOpp = 3;
+  let drag = null, needRender = false, logText = '', errText = '', focusNext = null;
+  let botGen = 0, botT = 0, roundT = 0, holdT = 0, actorHold = null, roundFx = null, myOpenPts = 0, popDown = false;
+  let feelCtx = {};
+  const fresh = new Map(); // meld id → time a bot laid or completed it (short glow)
+  const BOT_NAMES = ['Teta Rose', 'Abou Elie', 'Tante Mona', 'Jeddo Fouad']; // max 4 opponents (5 players)
+  const SHORT = { 'Tante Mona': 'Mona', 'Jeddo Fouad': 'Jeddo', 'Jiddo Fouad': 'Jiddo' };
+  const FEM = new Set(['Teta Rose', 'Tante Mona', 'Rita']);
+  // one choice of rules, no individual toggles: « classique » (default) or « maison » (Ryan's family)
+  let preset = 'classique';
+  try { const h = JSON.parse(lsGet(OPTS) || 'null'); if (h && K.PRESETS[h.preset]) preset = h.preset; } catch (e) {}
+
+  // ---------- sound and vibrations (one switch in the menu, remembered on this phone) ----------
+  let fxOn = lsGet(FXKEY) !== '0';
+  const RM = window.matchMedia ? matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
+  const motion = () => !RM.matches;
+
+  // haptic(kind): the ONE entry point for vibrations. Today: navigator.vibrate (Android browsers; iOS Safari has none).
+  // In the future Capacitor app, the @capacitor/haptics plugin is used instead (same kinds, nothing else to change).
+  const HAPTIC = {
+    select: { v: 6, cap: ['impact', 'LIGHT'] },          // card selected
+    place: { v: 12, cap: ['impact', 'MEDIUM'] },         // card(s) laid on the table
+    throw: { v: 12, cap: ['impact', 'MEDIUM'] },         // card thrown on the fosse
+    refuse: { v: [25, 40, 25], cap: ['notification', 'WARNING'] },
+    turn: { v: 18, cap: ['impact', 'LIGHT'] },           // « À toi »
+    down: { v: [15, 30, 15, 30, 40], cap: ['notification', 'SUCCESS'] }, // descendu
+    roundEnd: { v: [30, 50, 60], cap: ['notification', 'SUCCESS'] },
+  };
+  function haptic(kind) {
+    if (!fxOn) return;
+    const h = HAPTIC[kind]; if (!h) return;
+    try {
+      const C = window.Capacitor, H = C && C.Plugins && C.Plugins.Haptics;
+      if (H && C.isNativePlatform && C.isNativePlatform()) { h.cap[0] === 'impact' ? H.impact({ style: h.cap[1] }) : H.notification({ type: h.cap[1] }); return; }
+      if (navigator.vibrate) navigator.vibrate(h.v);
+    } catch (e) {}
+  }
+
+  const Sfx = (() => {
+    // synthesised with Web Audio (no file). The context is created inside a gesture; the iPhone silent switch is respected.
+    let ac = null, out = null, noise = null;
+    function unlock() {
+      if (!fxOn) return;
+      try {
+        if (!ac) {
+          const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+          ac = new AC(); out = ac.createGain(); out.gain.value = 0.55; out.connect(ac.destination);
+          const len = Math.floor(ac.sampleRate * 0.5), buf = ac.createBuffer(1, len, ac.sampleRate), d = buf.getChannelData(0);
+          for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+          noise = buf;
+        }
+        if (ac.state !== 'running') ac.resume();
+      } catch (e) {}
+    }
+    ['pointerup', 'click', 'keydown', 'touchend'].forEach(t => addEventListener(t, unlock, { capture: true, passive: true }));
+    const ok = () => fxOn && ac && ac.state === 'running';
+    function burst({ t = 0, dur = 0.05, f = 2500, q = 0.9, type = 'bandpass', vol = 0.5 }) {
+      const s = ac.createBufferSource(); s.buffer = noise;
+      const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q;
+      const gn = ac.createGain(), t0 = ac.currentTime + t;
+      gn.gain.setValueAtTime(vol, t0); gn.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+      s.connect(fl).connect(gn).connect(out); s.start(t0, Math.random() * 0.3, dur + 0.02);
+    }
+    function tone({ t = 0, f = 660, f2 = f, dur = 0.2, vol = 0.2, type = 'triangle' }) {
+      const o = ac.createOscillator(), gn = ac.createGain(), t0 = ac.currentTime + t;
+      o.type = type; o.frequency.setValueAtTime(f, t0); o.frequency.exponentialRampToValueAtTime(f2, t0 + dur);
+      gn.gain.setValueAtTime(0.0001, t0); gn.gain.exponentialRampToValueAtTime(vol, t0 + 0.008); gn.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      o.connect(gn).connect(out); o.start(t0); o.stop(t0 + dur + 0.02);
+    }
+    const S = {
+      tick: () => burst({ dur: 0.018, f: 4000, vol: 0.18 }),
+      slide: (t = 0) => burst({ t, dur: 0.11, f: 1800, q: 0.6, vol: 0.35 }),
+      snap: (t = 0, v = 1) => { burst({ t, dur: 0.035, f: 3000, type: 'highpass', vol: 0.55 * v }); tone({ t, f: 150, f2: 90, dur: 0.06, vol: 0.25 * v, type: 'sine' }); },
+      tok: () => tone({ f: 190, f2: 120, dur: 0.14, vol: 0.3, type: 'sine' }),
+      turn: () => { tone({ f: 784, dur: 0.18, vol: 0.12 }); tone({ t: 0.11, f: 1046, dur: 0.28, vol: 0.12 }); },
+      down: () => { [0, 0.06, 0.12].forEach(t => S.snap(t)); tone({ t: 0.2, f: 659, dur: 0.3, vol: 0.14 }); tone({ t: 0.28, f: 831, dur: 0.4, vol: 0.14 }); },
+      riffle: (n = 14) => { for (let i = 0; i < n; i++) burst({ t: i * 0.035, dur: 0.03, f: 2200 + Math.random() * 900, vol: 0.25 }); },
+      count: () => burst({ dur: 0.012, f: 5000, vol: 0.1 }),
+      win: () => [523, 659, 784, 1046].forEach((f, i) => tone({ t: i * 0.09, f, dur: 0.35, vol: 0.13 })),
+      lose: () => { tone({ f: 330, dur: 0.5, vol: 0.12 }); tone({ f: 392, dur: 0.5, vol: 0.09 }); },
+    };
+    return { unlock, play: (n, ...a) => { if (ok()) try { S[n](...a); } catch (e) {} } };
+  })();
+  const play = Sfx.play;
+  function setFx(v) { fxOn = !!v; lsSet(FXKEY, fxOn ? '1' : '0'); if (fxOn) { Sfx.unlock(); play('tick'); haptic('select'); } paintFx(); }
+  function paintFx() { const b = $('mFx'); if (b) b.setAttribute('aria-checked', String(fxOn)); }
+
+  // ---------- motion: FLIP by card id ----------
+  // every card element carries data-cid; before a render we remember where each card was, after the render each card
+  // glides from its old place to its new one. New cards come from the stock (deal, draw) or from the bot who played them.
+  const Feel = (() => {
+    let prev = null, raf = 0, ctx = {}, skip = false; const over = new Map(), flying = new Map();
+    const from = (id, rect) => over.set(String(id), rect);
+    const zoneOf = el => (el.closest('#discard') ? 'discard' : el.closest('#table') ? 'table' : el.closest('#drawn') ? 'drawn' : el.closest('#hand') ? 'hand' : null);
+    const cards = () => document.querySelectorAll('#discard [data-cid], #table [data-cid], #drawn [data-cid], #hand [data-cid]');
+    function snapNow() {
+      const m = new Map();
+      cards().forEach(el => { const r = el.getBoundingClientRect(); if (r.width) m.set(el.dataset.cid, { r, z: zoneOf(el) }); });
+      over.forEach((r, id) => m.set(String(id), { r, z: 'drag' })); over.clear();
+      return m;
+    }
+    function before() { if (!prev && !skip) prev = snapNow(); }
+    function after(c = {}) {
+      if (skip) { skip = false; prev = null; over.clear(); ctx = {}; return; }
+      Object.assign(ctx, c); cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => { const p = prev, k = ctx; prev = null; ctx = {}; if (p) run(p, k); });
+    }
+    const center = r => [r.left + r.width / 2, r.top + r.height / 2];
+    const EASE = 'cubic-bezier(.2,.8,.2,1)';
+    function glide(el, fr, { delay = 0, dur = 260, fromScale = 1, fade = false } = {}) {
+      const to = el.getBoundingClientRect(); const [fx, fy] = center(fr), [tx, ty] = center(to);
+      const dx = fx - tx, dy = fy - ty; if (Math.abs(dx) < 2 && Math.abs(dy) < 2 && fromScale === 1) return;
+      const s = ((fr.width / to.width) || 1) * fromScale;
+      const k0 = { translate: `${dx}px ${dy}px`, scale: String(s) }; if (fade) k0.opacity = 0;
+      const ks = fade ? [k0, { opacity: 1, offset: 0.2 }, { translate: '0 0', scale: '1', opacity: 1 }] : [k0, { translate: '0 0', scale: '1' }];
+      el.animate(ks, { duration: dur, delay, easing: EASE, fill: 'backwards' });
+    }
+    // the table scrolls (overflow), so a card entering it from outside travels as a fixed clone above everything
+    function flyInto(el, fr, { delay = 0, dur = 300, fromScale = 1, fade = false } = {}) {
+      const to = el.getBoundingClientRect(); if (!to.width) return;
+      const c = el.cloneNode(true); c.removeAttribute('data-cid'); c.removeAttribute('tabindex'); c.classList.add('flycard');
+      Object.assign(c.style, { position: 'fixed', left: to.left + 'px', top: to.top + 'px', margin: 0, zIndex: 18, pointerEvents: 'none' });
+      c.style.setProperty('--w', to.width + 'px');
+      document.body.appendChild(c);
+      const [fx, fy] = center(fr), [tx, ty] = center(to), s = ((fr.width / to.width) || 1) * fromScale;
+      const k0 = { translate: `${fx - tx}px ${fy - ty}px`, scale: String(s) }; if (fade) k0.opacity = 0;
+      const ks = fade ? [k0, { opacity: 1, offset: 0.2 }, { translate: '0 0', scale: '1', opacity: 1 }] : [k0, { translate: '0 0', scale: '1' }];
+      const a = c.animate(ks, { duration: dur, delay, easing: EASE, fill: 'both' });
+      a.onfinish = a.oncancel = () => c.remove();
+      const end = performance.now() + delay + dur; flying.set(el.dataset.cid, end);
+      el.animate([{ opacity: 0 }, { opacity: 0 }], { duration: delay + dur });
+    }
+    function ghostFly(fromR, toR, { back = false, delay = 0, dur = 300, html = '' } = {}) {
+      const d = document.createElement('div'); d.className = 'card ' + (back ? 'back ' : '') + 'flycard'; d.innerHTML = html;
+      Object.assign(d.style, { position: 'fixed', left: fromR.left + 'px', top: fromR.top + 'px', margin: 0, zIndex: 18, pointerEvents: 'none' });
+      d.style.setProperty('--w', fromR.width + 'px');
+      document.body.appendChild(d);
+      const [fx, fy] = center(fromR), [tx, ty] = center(toR);
+      const a = d.animate([{ translate: '0 0', opacity: 1 }, { translate: `${tx - fx}px ${ty - fy}px`, opacity: 0.85, scale: '.6' }], { duration: dur, delay, easing: 'cubic-bezier(.3,.7,.3,1)', fill: 'both' });
+      a.onfinish = a.oncancel = () => d.remove();
+    }
+    function run(p, k) {
+      const mv = motion(), stock = $('stock').getBoundingClientRect();
+      const actorEl = k.actor > 0 ? document.querySelector(`#opps .opp:nth-child(${k.actor}) .photo`) : null;
+      const actorR = actorEl && actorEl.getBoundingClientRect();
+      const now = performance.now();
+      let landTable = 0, landDiscard = false, newHand = 0, dealt = 0; const seen = new Set();
+      cards().forEach(el => {
+        const id = el.dataset.cid, z = zoneOf(el); seen.add(id);
+        const left = (flying.get(id) || 0) - now;
+        if (left > 0) { el.animate([{ opacity: 0 }, { opacity: 0 }], { duration: left }); return; }
+        const o = p.get(id);
+        if (o) {
+          if (o.z !== z && z === 'discard') landDiscard = true;
+          if (o.z !== z && z === 'table') landTable++;
+          if (!mv) return;
+          if (z === 'table' && o.z !== 'table') flyInto(el, o.r, { delay: landTable * 40 });
+          else glide(el, o.r);
+        } else if (z === 'hand' || z === 'drawn') {
+          const fr = k.from === 'discard' && k.discardR ? k.discardR : stock;
+          if (z === 'hand' && k.deal) { if (mv) glide(el, fr, { delay: dealt * 35, dur: 320 }); dealt++; }
+          else { newHand++; if (mv) glide(el, fr, { dur: 300 }); }
+        } else if (actorR) { // a card played by a bot: draw first, then lay, then throw
+          const delay = z === 'discard' ? 420 : 220;
+          if (z === 'discard') { landDiscard = true; play('snap', delay / 1000 + 0.3, 0.8); if (mv) glide(el, actorR, { delay, dur: 320, fromScale: 0.7, fade: true }); }
+          else { landTable++; play('snap', (delay + 300 + landTable * 50) / 1000, 0.6); if (mv) flyInto(el, actorR, { delay: delay + landTable * 30, dur: 320, fromScale: 0.7, fade: true }); }
+        }
+      });
+      // the card a bot took from the fosse flies to its portrait (cards that merely leave the fan do not)
+      if (actorR && mv && k.takenId != null) { const o = p.get(String(k.takenId)); if (o && !seen.has(String(k.takenId))) ghostFly(o.r, actorR, { html: k.takenHtml || '' }); }
+      if (k.botDrew && actorR) { if (mv) ghostFly(stock, actorR, { back: true }); play('slide'); }
+      if (!actorR) {
+        if (dealt) play('riffle', Math.min(dealt, 14));
+        if (newHand) play('slide');
+        if (landDiscard) { play('snap'); haptic('throw'); }
+        if (landTable) { for (let i = 0; i < landTable; i++) play('snap', i * 0.05, 0.8); haptic('place'); }
+      }
+    }
+    function shake(els) {
+      els.forEach(el => motion()
+        ? el.animate([{ translate: '0 0' }, { translate: '-5px 0' }, { translate: '5px 0' }, { translate: '-3px 0' }, { translate: '0 0' }], { duration: 220 })
+        : el.animate([{ outline: '3px solid #ff6b4a' }, { outline: '3px solid transparent' }], { duration: 400 }));
+    }
+    function reflow(container, mutate) {
+      if (!motion()) return mutate();
+      const kids = [...container.children], r0 = new Map(kids.map(x => [x, x.getBoundingClientRect()]));
+      mutate();
+      kids.forEach(x => { const a = r0.get(x), b = x.getBoundingClientRect(); if (a && a.width && b.width && (Math.abs(a.left - b.left) > 2 || Math.abs(a.top - b.top) > 2)) x.animate([{ translate: `${a.left - b.left}px ${a.top - b.top}px` }, { translate: '0 0' }], { duration: 160, easing: 'ease-out' }); });
+    }
+    return { before, after, from, shake, reflow, skipNext: () => { skip = true; } };
+  })();
+
+  // ---------- persistence ----------
+  function save() { try { localStorage.setItem(SAVE, JSON.stringify({ g, order, arranging, lastSort, drawnId })); } catch (e) {} }
+  function load() { try { const s = JSON.parse(lsGet(SAVE) || 'null'); return s && s.g ? s : null; } catch (e) { return null; } }
+  // a damaged save must never leave a blank screen: check every array and the 106 cards before accepting it
+  function validSave(s) {
+    try {
+      const gg = s && s.g; const A = Array.isArray;
+      if (!gg || !A(gg.players) || gg.players.length < 2 || gg.players.length > 6) return false;
+      if (!gg.players.every(p => p && A(p.hand) && typeof p.name === 'string' && Number.isFinite(p.score))) return false;
+      if (![gg.table, gg.staging, gg.stock, gg.discard].every(A)) return false;
+      if (!Number.isInteger(gg.turn) || !gg.players[gg.turn]) return false;
+      const ids = new Set(); let n = 0;
+      const add = c => { if (!c || typeof c.r !== 'number') throw new Error('card'); n++; ids.add(c.id); };
+      gg.players.forEach(p => p.hand.forEach(add));
+      gg.table.concat(gg.staging).forEach(m => { if (!m || !A(m.items)) throw new Error('meld'); m.items.forEach(it => add(it && it.card)); });
+      gg.stock.forEach(add); gg.discard.forEach(add);
+      return n === 106 && ids.size === 106;
+    } catch (e) { return false; }
+  }
+
+  // ---------- cards ----------
+  const SUITCH = K.SUITCH;
+  function cardEl(c, cls = '', as, type) {
+    const d = document.createElement('div');
+    if (K.isJoker(c)) {
+      d.className = 'card joker ' + cls;
+      d.innerHTML = '<span class="r">★</span><span class="jk">★</span>';
+      if (as) { const span = document.createElement('span'); span.className = 'as'; span.textContent = type === 'set' ? K.rankLabel(as.r) : K.rankLabel(as.p) + (as.s ? SUITCH[as.s] : ''); d.appendChild(span); }
+    } else {
+      d.className = 'card ' + (c.s === 'H' || c.s === 'D' ? 'red ' : '') + cls;
+      d.innerHTML = `<span class="r${c.r === 10 ? ' r10' : ''}">${K.rankLabel(c.r)}</span><span class="sm">${SUITCH[c.s]}</span><span class="s">${SUITCH[c.s]}</span>`;
+    }
+    d.setAttribute('aria-label', K.isJoker(c) ? 'joker' : K.cardLabel(c)); d.dataset.cid = c.id;
+    return d;
+  }
+  const SUIT_ORDER = { S: 0, H: 1, C: 2, D: 3 };
+  function sortedHand(h, mode) {
+    const v = c => (K.isJoker(c) ? 999 : mode === 'suit' ? SUIT_ORDER[c.s] * 20 + (c.r === 1 ? 14 : c.r) : (c.r === 1 ? 14 : c.r) * 4 + SUIT_ORDER[c.s]);
+    return h.slice().sort((a, b) => v(a) - v(b));
+  }
+  // the player's own arrangement: new cards go to the right end; duplicates (old damaged saves) are dropped
+  function orderedHand() {
+    const hand = g.players[0].hand, byId = new Map(hand.map(c => [c.id, c]));
+    order = [...new Set(order)].filter(id => byId.has(id));
+    hand.forEach(c => { if (!order.includes(c.id)) order.push(c.id); });
+    return order.filter(id => id !== drawnId).map(id => byId.get(id));
+  }
+  function sortNow(mode) { if (!g) return; order = sortedHand(g.players[0].hand, mode).map(c => c.id); lastSort = mode; save(); render(); }
+
+  // a meld is closed when no real card of the deck could extend it or win back one of its jokers
+  const ALL_CARDS = []; ['S', 'H', 'D', 'C'].forEach(s => { for (let r = 1; r <= 13; r++) ALL_CARDS.push({ id: -1, r, s }); });
+  function isClosed(m) { return !ALL_CARDS.some(c => K.extend(m, [c], g.o) || K.swapJoker(m, c)); }
+
+  // ---------- small helpers ----------
+  const initials = n => String(n).split(/\s+/).filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const plural = (n, w) => `${n} ${w}${n > 1 ? 's' : ''}`;
+  const seatName = i => (i === 0 ? 'Toi' : g.players[i].name);
+  const myName = () => (g.players[0].name || 'Toi');
+  const FLAME = '<svg viewBox="0 0 12 14" aria-hidden="true"><path d="M6 0c.6 2.6 4.6 4.4 4.6 8.4A4.6 4.6 0 0 1 1.4 8.4C1.4 6 3 4.8 3.4 3.2c.8 1.2.9 2.3 1.5 2.7C5.3 4 5.2 2 6 0z" fill="currentColor"/></svg>';
+
+  function banner(text, ms = 1300) {
+    const b = $('banner'); b.textContent = text; b.hidden = false;
+    b.classList.remove('show'); void b.offsetWidth; b.classList.add('show');
+    clearTimeout(banner.t); banner.t = setTimeout(() => { b.hidden = true; b.classList.remove('show'); }, ms);
+  }
+
+  // ---------- render ----------
+  const myTurnNow = () => g && g.turn === 0 && !g.roundOver && !busy && !arranging;
+  function messageHtml(me, myTurn) {
+    if (arranging) {
+      const first = g.players.findIndex(p => p.hand.length === 15);
+      return first === 0 ? '<b>Tu commences</b> (15 cartes).' : `<b>${esc(g.players[first >= 0 ? first : g.turn].name)} commence.</b>`;
+    }
+    if (g.roundOver) { const w = g.lastRound ? g.lastRound.winner : g.turn; return w < 0 ? '<b>Plus de cartes :</b> manche annulée.' : w === 0 ? '<b>Tu as fini la manche !</b>' : `<b>${esc(g.players[w].name)} a fini la manche.</b>`; }
+    if (g.turn !== 0 || actorHold != null && actorHold !== 0 && g.turn !== 0) return logText ? esc(logText) : `${esc(g.players[g.turn].name)} joue…`;
+    if (g.phase === 'draw') return '<b>À toi.</b> Pioche, ou prends la fosse.';
+    if (myTurn && sel.size) {
+      const n = sel.size;
+      if (n === 1) return me.opened ? '<b>1 carte.</b> Sur la fosse pour jeter, ou sur la table.' : '<b>1 carte.</b> Sur la fosse pour la jeter.';
+      if (n === 2) return me.opened ? '<b>2 cartes.</b> Sur une combinaison, ou ajoutes-en une.' : '<b>2 cartes.</b> Il en faut 3 pour poser.';
+      return `<b>${n} cartes.</b> Sur la table pour les poser.`;
+    }
+    if (K.takenPending(g)) return '<b>Carte prise :</b> fais-en une combinaison, ou rends-la.';
+    if (myOpenPts) return `<b>Descendu avec ${myOpenPts} points !</b> Complète ou jette.`;
+    if (g.firstTurn && me.hand.length === 15) return `<b>Tu commences.</b> Descends si tu as ${g.o.openMin}, puis jette.`;
+    if (!me.opened) return `<b>À toi.</b> Descends si tu as ${g.o.openMin}, puis jette.`;
+    return '<b>À toi.</b> Pose ou complète, puis jette.';
+  }
+  function render() {
+    if (!g) return;
+    if (drag) { needRender = true; return; } // never rebuild the hand while a finger is down
+    needRender = false;
+    Feel.before();
+    const ae = document.activeElement, fid = ae && ae.dataset && ae.dataset.id && ae.closest && ae.closest('#hand, #drawn') ? ae.dataset.id : null;
+    const me = g.players[0], myTurn = myTurnNow();
+    const now = performance.now(), pulse = `${-(now % 1600)}ms`;
+    $('roundLbl').textContent = 'manche ' + g.round;
+    // opponents: one row of portrait frames; the one who is playing (or just played) keeps the light
+    const hl = actorHold != null ? actorHold : (!g.roundOver && !arranging && g.turn !== 0 ? g.turn : null);
+    const opps = $('opps'); opps.innerHTML = '';
+    const n = g.players.length - 1;
+    opps.style.setProperty('--cols', n); opps.classList.toggle('dense', n > 2); opps.classList.toggle('playing', hl != null && hl !== 0);
+    g.players.forEach((p, i) => {
+      if (i === 0) return;
+      const d = document.createElement('div');
+      const turn = hl === i;
+      d.className = 'opp portrait c' + i + (turn ? ' turn' : '') + (p.out ? ' out' : '');
+      if (turn) d.style.animationDelay = pulse;
+      const nm = n > 2 ? (SHORT[p.name] || p.name) : p.name, f = FEM.has(p.name);
+      const lab = `${p.name}, ${p.score} points, ${p.out ? (f ? 'éliminée' : 'éliminé') + ', ' : ''}${plural(p.hand.length, 'carte')}${p.opened ? (f ? ', descendue' : ', descendu') : ''}${p.burns ? `, ${f ? 'brûlée' : 'brûlé'} ${p.burns} fois` : ''}. Voir la caméra`;
+      d.innerHTML = `<button class="photo" type="button" data-cam="${i}" aria-label="${esc(lab)}"><span class="ini" aria-hidden="true">${esc(initials(p.name))}</span></button>
+        <div class="ov-top" aria-hidden="true"><span class="sc">${p.score}</span><span class="ics">${p.out ? '' : `<span class="nc${p.hand.length === 1 && !g.roundOver ? ' last' : ''}"><i class="mb"></i>${p.hand.length}</span>`}</span></div>
+        ${p.opened || p.burns ? `<div class="stat" aria-hidden="true">${p.opened ? '<span class="ok">✓</span>' : ''}${p.burns ? `<span class="fl">${FLAME}${p.burns}</span>` : ''}</div>` : ''}
+        ${p.out ? `<span class="outtag">${f ? 'éliminée' : 'éliminé'}</span>` : ''}<div class="ov-bot" aria-hidden="true"><span class="nm">${esc(nm)}</span></div>${p.out ? '' : deltaChip(i)}`;
+      opps.appendChild(d);
+    });
+    // table
+    const tb = $('table'); tb.innerHTML = '';
+    const canTarget = myTurn && g.phase === 'play' && me.opened && sel.size > 0;
+    if (g.staging.length) {
+      const pend = document.createElement('div'); pend.className = 'pending';
+      const tot = K.stagingTotal(g);
+      pend.innerHTML = `<div class="ph-h"><span class="tot">${tot} / ${g.o.openMin}</span> encore ${g.o.openMin - tot} · touche pour reprendre</div>`;
+      const row = document.createElement('div'); row.className = 'ph-row';
+      g.staging.forEach(sm => {
+        const d = document.createElement('div'); d.className = 'meld mine'; d.tabIndex = 0; d.setAttribute('role', 'button'); d.setAttribute('aria-label', `Reprendre cette combinaison (${sm.value} points)`);
+        d.innerHTML = `<div class="own">${sm.value}</div>`;
+        const cs = document.createElement('div'); cs.className = 'cards'; sm.items.forEach(it => cs.appendChild(cardEl(it.card, '', K.isJoker(it.card) ? it.as : null, sm.type)));
+        d.appendChild(cs);
+        d.onclick = () => { K.unstage(g, sm.id); sel.clear(); errText = ''; save(); render(); };
+        d.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); d.click(); } };
+        row.appendChild(d);
+      });
+      pend.appendChild(row); tb.appendChild(pend);
+    }
+    if (!g.table.length && !g.staging.length) {
+      const e = document.createElement('div'); e.className = 'empty';
+      if (arranging) e.innerHTML = `<span>${messageHtml(me, false)}<br><b>Range tes cartes</b> ou trie&#8209;les :</span><span class="row2"><button class="ghost" type="button" data-sort="suit" aria-pressed="${lastSort === 'suit'}">Par signe</button><button class="ghost" type="button" data-sort="rank" aria-pressed="${lastSort === 'rank'}">Par valeur</button></span>`;
+      else e.textContent = `Personne n'est descendu (${g.o.openMin} points).`;
+      tb.appendChild(e);
+    }
+    // melds grouped by player, in the order of the portraits; yours last, closest to your hand
+    const seatKey = o => (o === 0 ? 99 : o);
+    g.table.slice().sort((a, b) => seatKey(a.owner) - seatKey(b.owner) || a.id - b.id).forEach(m => {
+      const d = document.createElement('div');
+      const closed = isClosed(m), ft = fresh.get(m.id), age = ft ? now - ft : 1e9;
+      d.className = 'meld' + (m.owner === 0 ? ' mine' : '') + (closed ? ' closed' : '') + (canTarget && !closed ? ' target' : '') + (age < 1700 ? ' fresh' : '');
+      if (age < 1700) d.style.animationDelay = `${-age}ms`;
+      d.dataset.id = m.id;
+      d.innerHTML = `<div class="own s${m.owner}">${m.owner === 0 ? 'toi' : esc(initials(g.players[m.owner].name))}</div>${closed ? '<span class="done" aria-hidden="true">✓</span>' : ''}`;
+      const cs = document.createElement('div'); cs.className = 'cards';
+      m.items.forEach(it => cs.appendChild(cardEl(it.card, '', K.isJoker(it.card) ? it.as : null, m.type)));
+      d.appendChild(cs);
+      d.setAttribute('aria-label', `${seatName(m.owner)} : ${m.items.map(it => K.isJoker(it.card) ? 'joker' : K.cardLabel(it.card)).join(' ')}${closed ? ', complète' : ''}`);
+      if (canTarget && !closed) {
+        d.tabIndex = 0; d.setAttribute('role', 'button'); d.setAttribute('aria-label', 'Ajouter à cette combinaison : ' + d.getAttribute('aria-label'));
+        d.onclick = () => act(() => withJokerCheck(() => K.addTo(g, [...sel], m.id)));
+        d.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); d.click(); } };
+      }
+      tb.appendChild(d);
+    });
+    // piles
+    $('stockCnt').textContent = g.stock.length || (g.discard.length > 1 ? '↻' : '0');
+    const st = $('stock'); st.disabled = !(myTurn && g.phase === 'draw'); st.classList.toggle('live', !st.disabled); st.classList.toggle('empty', !g.stock.length);
+    const dp = $('discard'); dp.innerHTML = '';
+    const top = g.discard[g.discard.length - 1];
+    if (top) {
+      // the fosse fans out the last full turn: one card per player, newest on the right (only that one can be taken)
+      // the fan shows the opponents' discards of the last turn, never your own; if the top card is yours it shows alone
+      // = the cards thrown since your last discard (at most one per opponent)
+      let mine = -1; for (let k = g.discard.length - 1; k >= 0; k--) if (g.discard[k].by === 0) { mine = k; break; }
+      const nOpp = g.players.filter((p, k) => k && !p.out).length;
+      const last = top.by === 0 ? [top] : g.discard.slice(mine + 1).filter(c => c.by !== 0).slice(-nOpp);
+      last.forEach((c, k) => {
+        const w = document.createElement('div'); w.className = 'fanc' + (k === last.length - 1 ? ' top' : '');
+        w.appendChild(cardEl(c, 'pilec'));
+        if (c.by != null && g.players[c.by]) { const l = document.createElement('span'); l.className = 'by s' + c.by; l.textContent = c.by === 0 ? 'toi' : initials(g.players[c.by].name); w.appendChild(l); }
+        dp.appendChild(w);
+      });
+      dp.setAttribute('aria-label', 'Fosse : ' + last.map(c => (K.isJoker(c) ? 'joker' : K.cardLabel(c)) + (c.by != null && g.players[c.by] ? ` (${seatName(c.by)})` : '')).join(', '));
+    } else { const e = document.createElement('div'); e.className = 'card pilec slot'; e.innerHTML = '<span>Fosse</span>'; dp.appendChild(e); dp.setAttribute('aria-label', 'Fosse (vide)'); }
+    dp.disabled = !(myTurn && ((g.phase === 'draw' && top) || g.phase === 'play'));
+    dp.classList.toggle('live', myTurn && ((g.phase === 'draw' && !!top) || (g.phase === 'play' && sel.size === 1)));
+    // message (one fixed line): the instruction, the last bot move, or the error
+    const mh = errText ? `<span class="errm">${esc(errText)}</span>` : messageHtml(me, myTurn);
+    const msg = $('msg'); if (msg.innerHTML !== mh) msg.innerHTML = mh;
+    // you: your tile next to the stock (score, status; tap = menu)
+    const meTurn = g.turn === 0 && !g.roundOver && !arranging && (actorHold == null || actorHold === 0);
+    $('me').className = 'me' + (meTurn ? ' turn' : '');
+    $('me').innerHTML = `<button class="selftile c0" type="button" id="btnMenu" aria-label="Toi, ${me.score} points. Menu : règles, tri, son, nouvelle partie"><span class="ini" aria-hidden="true">${esc(initials(myName()))}</span><span class="sc">${me.score}</span><span class="mn" aria-hidden="true">≡</span>${me.opened || me.burns ? `<span class="st">${me.burns ? `<span class="fl">${FLAME}${me.burns}</span>` : ''}${me.opened ? `<span class="ok${popDown ? ' pop' : ''}">✓</span>` : ''}</span>` : ''}</button>${deltaChip(0)}`;
+    popDown = false;
+    // the card just drawn waits in its own slot until it is kept, laid or thrown
+    if (drawnId != null && (g.turn !== 0 || g.roundOver || !me.hand.some(c => c.id === drawnId))) drawnId = null;
+    const ds = $('drawn'); ds.innerHTML = ''; ds.hidden = drawnId == null;
+    if (drawnId != null) {
+      const c = me.hand.find(x => x.id === drawnId);
+      const lab = document.createElement('div'); lab.className = 'dl'; lab.textContent = g.tookDiscard === drawnId ? 'Prise' : g.firstTurn ? '15e carte' : 'Piochée';
+      const d = cardEl(c, 'drawnc' + (sel.has(c.id) ? ' sel' : ''));
+      d.dataset.id = c.id; d.tabIndex = 0; d.setAttribute('role', 'button'); d.setAttribute('aria-pressed', sel.has(c.id));
+      d.addEventListener('pointerdown', e => onDown(e, c.id, d));
+      d.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tap(c.id); } };
+      ds.appendChild(lab); ds.appendChild(d);
+    }
+    // hand: 7 + 7, the two rows overlap
+    const h = $('hand'); h.innerHTML = '';
+    const oh = orderedHand(); const cols = Math.max(7, Math.ceil(oh.length / 2));
+    h.style.setProperty('--hc1', cols - 1);
+    oh.forEach((c, i) => {
+      const d = cardEl(c, (sel.has(c.id) ? 'sel' : '') + (i + cols < oh.length ? ' r1' : ''));
+      d.dataset.id = c.id; d.tabIndex = 0; d.setAttribute('role', 'button'); d.setAttribute('aria-pressed', sel.has(c.id));
+      d.addEventListener('pointerdown', e => onDown(e, c.id, d));
+      d.onkeydown = e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tap(c.id); }
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          const vis = orderedHand().map(x => x.id), i2 = vis.indexOf(c.id), j = i2 + (e.key === 'ArrowLeft' ? -1 : 1);
+          if (j >= 0 && j < vis.length) { const a = order.indexOf(vis[i2]), b = order.indexOf(vis[j]); [order[a], order[b]] = [order[b], order[a]]; lastSort = ''; save(); render(); }
+        }
+      };
+      h.appendChild(d);
+    });
+    // the bar's single button (no action buttons while playing)
+    const a = $('actions'); a.innerHTML = '';
+    const B = (label, fn, main) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn' + (main ? ' main' : ''); b.textContent = label; b.onclick = fn; a.appendChild(b); return b; };
+    if (arranging) B('Yalla !', ready, true);
+    else if (myTurn && g.phase === 'play' && K.takenPending(g) && !g.actedSinceTake) B('Rendre la carte', () => act(() => { const e = K.giveBackDiscard(g); if (!e) drawnId = null; return e; }));
+    else if (g.roundOver && $('ovRound').hidden && !roundT) B('Voir les scores', showRound, true);
+    a.hidden = !a.children.length;
+    // one thing at a time next to the piles: an error, else the button, else the instruction
+    $('side').classList.toggle('hasbtn', !a.hidden && !errText); $('side').classList.toggle('errbtn', !a.hidden && !!errText);
+    fitTable();
+    msg.classList.remove('fit'); if (msg.scrollHeight > msg.clientHeight + 1) msg.classList.add('fit');
+    Feel.after(feelCtx); feelCtx = {};
+    // keep the keyboard focus on the same card (or on the card just drawn)
+    const fsel = fid != null ? `#hand [data-id="${fid}"], #drawn [data-id="${fid}"]` : focusNext;
+    focusNext = null;
+    if (fsel) { const el = document.querySelector(fsel); if (el) el.focus({ preventScroll: true }); }
+  }
+  function deltaChip(i) {
+    if (!roundFx || !g.lastRound) return '';
+    const pts = g.lastRound.rows[i] ? g.lastRound.rows[i].pts : 0;
+    return `<span class="delta${i === g.lastRound.winner ? ' win' : ''}" data-i="${i}" data-pts="${pts}">${i === g.lastRound.winner ? (pts ? String(pts).replace('-', '−') : '0') : '+' + (motion() && !roundFx.done ? 0 : pts)}</span>`;
+  }
+  // table cards take the biggest size that fits without scrolling: the hand size (sparse table) down to 80 % (busy table),
+  // in 5 fixed steps so that a round sees at most a few calm resizes (FLIP animates them); scrolling is the last resort
+  // steps = card size × fan (normal strip 0.42, then tight 0.38): a bigger card with a tighter fan beats a smaller card
+  const TK = [1.25, 1.12, 1, .9, .8].flatMap(k => [[k, false], [k, true]]); let tkI = 0;
+  function fitTable() {
+    const tb = $('table');
+    const over = () => tb.scrollHeight > tb.clientHeight + 1;
+    const set = i => { tb.style.setProperty('--tk', TK[i][0]); tb.classList.toggle('tight', TK[i][1]); };
+    if (!g.table.length && !g.staging.length) tkI = 0; // new round: start big again
+    // start one step above the current size (the table only grows during a round): 1 or 2 layouts per render
+    let k = Math.max(0, tkI - 1); set(k);
+    while (over() && k < TK.length - 1) set(++k);
+    tkI = k;
+    moreHint();
+  }
+  function moreHint() {
+    const tb = $('table'), mh = $('moreHint');
+    const r = tb.getBoundingClientRect();
+    const hidden = [...tb.querySelectorAll(':scope > .meld, :scope > .pending')].filter(m => m.getBoundingClientRect().top > r.bottom - 12).length;
+    mh.hidden = !hidden || tb.scrollTop + tb.clientHeight >= tb.scrollHeight - 4;
+    if (!mh.hidden) mh.textContent = `↓ ${plural(hidden, 'combinaison')}`;
+  }
+  $('table').addEventListener('scroll', moreHint, { passive: true });
+  window.addEventListener('resize', () => { if (g) { tkI = 0; Feel.skipNext(); render(); } });
+
+  // ---------- your moves ----------
+  function whyNot() {
+    if (arranging) return 'Touche « Yalla ! » pour commencer.';
+    if (!g || g.roundOver) return 'La manche est finie.';
+    if (g.turn !== 0 || busy) return 'Attends ton tour.';
+    if (g.phase === 'draw') return 'Pioche d\'abord, ou prends la fosse.';
+    return '';
+  }
+  function refuse(e) {
+    errText = e; render();
+    play('tok'); haptic('refuse');
+    Feel.shake([...document.querySelectorAll('#hand .card.sel, #drawn .card.sel')]);
+  }
+  function tap(id) {
+    const w = whyNot();
+    if (w) { if (!arranging) refuse(w); return; }
+    errText = '';
+    sel.has(id) ? sel.delete(id) : sel.add(id);
+    play('tick'); haptic('select'); render();
+  }
+  // laying on the table: before going down, cards stay on the table as pending until they reach the minimum, then you are down
+  function layNow(ids) {
+    const e = K.lay(g, ids);
+    if (e) return e;
+    if (!g.players[0].opened && K.stagingTotal(g) >= g.o.openMin) {
+      const pts = K.stagingTotal(g);
+      if (!K.openUp(g)) { myOpenPts = pts; popDown = true; setTimeout(() => { play('down'); haptic('down'); banner('Descendu !'); }, 250); }
+    }
+    return null;
+  }
+  // a card that wins back a table joker: say it
+  function withJokerCheck(fn) {
+    const before = g.players[0].hand.filter(K.isJoker).length;
+    const e = fn();
+    if (!e && g.players[0].hand.filter(K.isJoker).length > before) setTimeout(() => { banner('Joker récupéré'); play('down'); }, 200);
+    return e;
+  }
+  // cards dropped anywhere on the table: a new combination if they make one, otherwise the table combination they fit
+  function dropOnTable(ids) {
+    const me = g.players[0];
+    const cards = ids.map(id => me.hand.find(c => c.id === id));
+    if (cards.some(c => !c)) return 'Carte introuvable.';
+    if (ids.length >= 3 && K.validate(cards, g.o)) return layNow(ids);
+    if (!me.opened) return ids.length >= 3 ? K.lay(g, ids) : 'Il faut 3 cartes par combinaison.';
+    const fits = g.table.filter(m => (cards.length === 1 && K.swapJoker(m, cards[0])) || (cards.length === 2 && K.swapJoker2(m, cards)) || K.extend(m, cards, g.o));
+    if (!fits.length) return ids.length >= 3 ? K.lay(g, ids) : (cards.length === 1 ? `${K.cardLabel(cards[0])} ne va sur aucune combinaison.` : 'Ces cartes ne vont sur aucune combinaison.');
+    if (fits.length > 1) return 'Plusieurs combinaisons possibles : glisse-la dessus.';
+    return withJokerCheck(() => K.addTo(g, ids, fits[0].id));
+  }
+  function act(fn) {
+    let e;
+    try { e = fn(); } catch (x) { console.error(x); e = 'Coup impossible.'; }
+    if (e) { refuse(e); return; }
+    errText = ''; sel.clear();
+    if (!g.roundOver) K.checkOut(g);
+    if (g.turn !== 0 || g.roundOver) { myOpenPts = 0; logText = ''; }
+    save(); render();
+    if (g.roundOver) { endRoundFx(); return; }
+    if (g.turn !== 0) runBots();
+  }
+  function drawFromStock() {
+    if (!g) return;
+    act(() => { const e = K.drawStock(g); if (!e) { drawnId = g.lastDrawn; focusNext = '#drawn .card'; } return e; });
+  }
+  function takeFosse() {
+    const tr = document.querySelector('#discard .fanc.top .card');
+    const r = tr && tr.getBoundingClientRect();
+    act(() => { const e = K.takeDiscard(g); if (!e) { drawnId = g.tookDiscard; focusNext = '#drawn .card'; feelCtx = { from: 'discard', discardR: r }; } return e; });
+  }
+
+  // ---------- drag: reorder in hand, drop on the fosse, drop on a table meld ----------
+  function onDown(e, id, el) {
+    if (e.button > 0 || drag) return;
+    drag = { id, el, x0: e.clientX, y0: e.clientY, active: false, ghost: null, ph: null, target: null, pid: e.pointerId };
+    el.classList.add('press');
+    // the finger may leave the frame: capture the pointer, and cancel cleanly if the capture is lost
+    try { el.setPointerCapture(e.pointerId); } catch (_) {}
+    el.addEventListener('lostpointercapture', ev => { if (drag && drag.pid === ev.pointerId) onUp(ev, true); }, { once: true });
+  }
+  function clearDrop() { document.querySelectorAll('.drop').forEach(x => x.classList.remove('drop')); }
+  function startDrag() {
+    drag.active = true;
+    const hand = g.players[0].hand;
+    const multi = sel.has(drag.id) && sel.size > 1;
+    const ids = multi ? [drag.id, ...[...sel].filter(x => x !== drag.id)] : [drag.id];
+    const gw = document.createElement('div'); gw.className = 'ghostwrap';
+    ids.slice(0, 5).forEach((cid, k) => { const c = hand.find(x => x.id === cid); if (!c) return; const ce = cardEl(c, 'ghostcard'); ce.style.setProperty('--k', k); gw.appendChild(ce); });
+    if (multi) { const b = document.createElement('span'); b.className = 'badge2'; b.textContent = '×' + sel.size; gw.appendChild(b); }
+    document.body.appendChild(gw); drag.ghost = gw;
+    drag.lift = gw.firstChild ? gw.firstChild.offsetHeight * 0.55 : 40;
+    drag.ph = document.createElement('div'); drag.ph.className = 'ph';
+    if (drag.el.parentElement === $('hand')) drag.el.after(drag.ph);
+    else { // a card coming from the drawn slot adds one cell to the hand: widen the rows now (8 + 7), never a 3rd row
+      const h = $('hand'), n = h.querySelectorAll('.card').length + 1;
+      h.style.setProperty('--hc1', Math.max(7, Math.ceil(n / 2)) - 1);
+    }
+    drag.el.classList.add('lifted'); // out of the layout but still in the document, so the pointer capture holds
+    if (multi) document.querySelectorAll('#hand .card.sel, #drawn .card.sel').forEach(x => x.classList.add('dim'));
+  }
+  function placePh(x, y) {
+    const h = $('hand');
+    const cards = [...h.children].filter(c => c !== drag.el && c !== drag.ph);
+    if (!cards.length) { h.appendChild(drag.ph); return; }
+    let best = null, bd = Infinity;
+    // cards overlap horizontally: aim at the visible strip of each card (up to the next card of the same row)
+    const rects = cards.map(c => c.getBoundingClientRect());
+    cards.forEach((c, k) => {
+      const r = rects[k], nx = rects[k + 1], vis = nx && Math.abs(nx.top - r.top) < 4 && nx.left > r.left ? Math.min(r.width, nx.left - r.left) : r.width;
+      const cx = r.left + vis / 2, cy = r.top + r.height / 2, dd = Math.hypot(x - cx, (y - cy) * 1.6);
+      if (dd < bd) { bd = dd; best = { c, cx }; }
+    });
+    if (x < best.cx) { if (best.c.previousSibling !== drag.ph) Feel.reflow(h, () => best.c.before(drag.ph)); }
+    else if (best.c.nextSibling !== drag.ph) Feel.reflow(h, () => best.c.after(drag.ph));
+  }
+  function nearFosse(x, y) {
+    const r = $('discard').getBoundingClientRect(), m = 16;
+    return x > r.left - m && x < r.right + m && y > r.top - m && y < r.bottom + 4;
+  }
+  function onMove(e) {
+    if (!drag || e.pointerId !== drag.pid) return;
+    if (!drag.active) { if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 8) return; startDrag(); }
+    e.preventDefault();
+    drag.ghost.style.left = e.clientX + 'px'; drag.ghost.style.top = e.clientY + 'px';
+    // the card is shown above the finger (so the thumb does not hide it): aim with the card, not the finger
+    const x = e.clientX, y = e.clientY - drag.lift;
+    clearDrop();
+    const under = document.elementFromPoint(x, y);
+    const hr = $('hand').getBoundingClientRect();
+    let t = null;
+    if ((under && (under.closest('#discard') || under.closest('#drawn'))) || nearFosse(x, y)) { t = { kind: 'discard' }; $('discard').classList.add('drop'); }
+    else if (under && under.closest('#table .meld[data-id]')) { const m = under.closest('.meld'); t = { kind: 'meld', id: +m.dataset.id }; m.classList.add('drop'); }
+    else if (under && under.closest('#table')) { t = { kind: 'table' }; $('table').classList.add('drop'); }
+    else if (y > hr.top - 30) { t = { kind: 'hand' }; placePh(x, Math.min(y, hr.bottom - 10)); } // from the hand down to the screen edge counts as the hand
+    const lock = !!t && t.kind !== 'hand', was = drag.ghost.classList.contains('lock');
+    if (lock !== was) { drag.ghost.classList.toggle('lock', lock); if (lock) haptic('select'); }
+    drag.target = t;
+  }
+  function onUp(e, cancel) {
+    if (!drag || (e && e.pointerId != null && e.pointerId !== drag.pid)) return;
+    const d = drag; drag = null;
+    d.el.classList.remove('press');
+    try { if (d.el.hasPointerCapture && d.el.hasPointerCapture(d.pid)) d.el.releasePointerCapture(d.pid); } catch (_) {}
+    if (!d.active) { if (!cancel) tap(d.id); else render(); return; }
+    d.ghost.querySelectorAll('[data-cid]').forEach(c => Feel.from(c.dataset.cid, c.getBoundingClientRect()));
+    d.ghost.remove(); clearDrop();
+    const t = cancel ? null : d.target;
+    if (t && t.kind === 'hand') {
+      order = [...$('hand').children].filter(c => c === d.ph || (c !== d.el && +c.dataset.id !== d.id)).map(c => (c === d.ph ? d.id : +c.dataset.id));
+      if (d.id === drawnId) drawnId = null;
+      lastSort = ''; save(); render(); return;
+    }
+    d.ph.remove(); d.el.classList.remove('lifted');
+    if (!t) { if (!cancel && myTurnNow() && g.phase === 'play') errText = 'Lâche sur la fosse pour jeter, ou sur la table.'; render(); return; }
+    const w = whyNot();
+    if (w) { refuse(w); return; }
+    const ids = sel.has(d.id) ? [...sel] : [d.id];
+    if (t.kind === 'discard') {
+      if (ids.length > 1) { refuse('Une seule carte à la fois sur la fosse.'); return; }
+      act(() => K.discard(g, d.id));
+    } else if (t.kind === 'table') act(() => dropOnTable(ids));
+    else if (t.kind === 'meld') {
+      if (!g.players[0].opened) { refuse(`Descends d'abord (${g.o.openMin} points) pour compléter.`); return; }
+      act(() => withJokerCheck(() => K.addTo(g, ids, t.id)));
+    }
+    if (needRender) render();
+  }
+  window.addEventListener('pointermove', onMove, { passive: false });
+  window.addEventListener('pointerup', e => onUp(e, false));
+  window.addEventListener('pointercancel', e => onUp(e, true));
+  window.addEventListener('blur', () => { if (drag) onUp({ pointerId: drag.pid }, true); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden && drag) onUp({ pointerId: drag.pid }, true); });
+
+  // ---------- bots ----------
+  // one line per bot turn, the thrown card included: « Abou Elie prend A♠, descend (65) et jette 9♦. »
+  function botLine(name, steps) {
+    const parts = []; let out = false;
+    steps.forEach(s => {
+      if (s.kind === 'take') parts.push(`prend ${s.card}`);
+      else if (s.kind === 'draw') parts.push(s.back ? 'rend la carte et pioche' : 'pioche');
+      else if (s.kind === 'open') parts.push(`descend (${s.pts})`);
+      else if (s.kind === 'lay') parts.push(s.n > 1 ? `pose ${s.n} combinaisons` : 'pose une combinaison');
+      else if (s.kind === 'swap') parts.push('récupère un joker');
+      else if (s.kind === 'addto') parts.push(s.n > 1 ? `complète ${s.n} combinaisons` : 'complète une combinaison');
+      else if (s.kind === 'discard') parts.push(`jette ${s.card}`);
+      else if (s.kind === 'out') out = true;
+      else if (s.kind === 'void') parts.push('pioche… plus de cartes');
+    });
+    const body = parts.length > 1 ? parts.slice(0, -1).join(', ') + ' et ' + parts[parts.length - 1] : parts.join('');
+    return `${name} ${body}${out ? ' : fini !' : '.'}`;
+  }
+  function holdActor(i) {
+    actorHold = i; clearTimeout(holdT);
+    holdT = setTimeout(() => {
+      actorHold = null; render();
+      if (g && g.turn === 0 && !g.roundOver && !arranging) { play('turn'); haptic('turn'); }
+    }, 800);
+  }
+  // pace: one bot move every 1.1 s (unchanged; a difficulty level would plug in K.botTurn, see engine.js)
+  function runBots() {
+    if (busy || arranging || !g || g.roundOver || g.turn === 0) return;
+    busy = true; const gen = botGen; render();
+    const step = () => {
+      if (gen !== botGen || !g) return;
+      if (g.roundOver || g.turn === 0) { busy = false; save(); render(); if (g.roundOver) endRoundFx(); return; }
+      const actor = g.turn, top0 = g.discard[g.discard.length - 1];
+      const before = new Map(g.table.map(m => [m.id, m.items.length]));
+      const steps = K.botTurn(g);
+      logText = botLine(g.players[actor].name, steps);
+      const t = performance.now(); g.table.forEach(m => { if (before.get(m.id) !== m.items.length) fresh.set(m.id, t); });
+      feelCtx = { actor, botDrew: steps.some(s => s.kind === 'draw'), takenHtml: top0 && steps.some(s => s.kind === 'take') ? cardEl(top0).innerHTML : '', takenId: top0 && steps.some(s => s.kind === 'take') ? top0.id : null };
+      if (g.roundOver || g.turn === 0) busy = false; // your turn starts now: the stock answers at once
+      holdActor(actor);
+      save(); render();
+      if (g.roundOver) { endRoundFx(); return; }
+      if (g.turn !== 0) botT = setTimeout(step, 1100);
+    };
+    botT = setTimeout(step, 700);
+  }
+
+  // ---------- round flow ----------
+  function stopTimers() { botGen++; clearTimeout(botT); clearTimeout(roundT); clearTimeout(holdT); roundT = 0; busy = false; actorHold = null; roundFx = null; }
+  // the end of a round is staged: the last move lands, « X a fini ! », the points count up on the portraits, then the sheet
+  function endRoundFx() {
+    clearTimeout(roundT);
+    const r = g.lastRound; if (!r) return;
+    const gen = botGen, w = r.winner;
+    roundT = setTimeout(() => {
+      if (gen !== botGen || !g.roundOver) return;
+      banner(w < 0 ? 'Manche annulée' : w === 0 ? 'Tu as fini !' : `${g.players[w].name} a fini !`, 1200);
+      play(w === 0 || (g.over && g.winner === 0) ? 'win' : 'lose'); haptic('roundEnd');
+      roundFx = { t0: performance.now() }; render(); countUp();
+      roundT = setTimeout(() => { roundT = 0; if (gen === botGen) showRound(); }, motion() ? 1700 : 1000);
+    }, 650);
+  }
+  function countUp() {
+    if (!motion()) return;
+    const t0 = performance.now(), D = 600; let lastTick = 0;
+    const f = () => {
+      if (!roundFx) return;
+      const k = Math.min(1, (performance.now() - t0) / D);
+      document.querySelectorAll('.delta[data-pts]').forEach(el => { if (el.classList.contains('win')) return; el.textContent = '+' + Math.round(+el.dataset.pts * k); });
+      const tk = Math.floor(k * 8); if (tk > lastTick) { lastTick = tk; play('count'); }
+      if (k < 1) requestAnimationFrame(f); else roundFx.done = true;
+    };
+    requestAnimationFrame(f);
+  }
+  function newRound() {
+    stopTimers();
+    $('ovRound').hidden = true;
+    K.startRound(g); sel.clear(); order = []; lastSort = ''; arranging = true; errText = ''; logText = ''; myOpenPts = 0; fresh.clear();
+    const mh = g.players[0].hand; drawnId = (g.turn === 0 && mh.length === 15) ? mh[14].id : null; // the 15th dealt card waits in the drawn-card slot
+    feelCtx = { deal: true }; save(); render();
+  }
+  function ready() { arranging = false; errText = ''; save(); render(); if (g.turn !== 0) runBots(); }
+  function showRound() {
+    const r = g && g.lastRound; if (!r || !g.roundOver) return;
+    const sh = $('roundSheet');
+    const w = g.players[r.winner] || { name: '' };
+    let html;
+    if (r.limit) html = `<h2>Fin de la partie</h2><p>Après ${r.round} manches, le plus petit score gagne : ${esc(seatName(g.winner))}.</p>`;
+    else if (r.void) html = `<h2>Manche ${r.round} annulée</h2><p>Plus de cartes à piocher : personne ne marque, on redonne.</p>`;
+    else if (g.over) {
+      const gw = g.players[g.winner];
+      html = g.winner === 0 ? '<h2>Mabrouk, tu gagnes la partie !</h2>' : `<h2>Mabrouk ${esc(gw.name)} !</h2><p>${FEM.has(gw.name) ? 'Elle' : 'Il'} gagne la partie.</p>`;
+    } else html = r.winner === 0 ? `<h2>Tu as fini la manche ${r.round} !</h2>` : `<h2>Manche ${r.round} : ${esc(w.name)} a fini.</h2>`;
+    if (r.handFinish) html += r.winner === 0 ? '<p>Tu as tout posé d\'un coup.</p>' : `<p>${esc(w.name)} a tout posé d'un coup.</p>`;
+    html += `<table class="sc"><thead><tr><th>Joueur</th><th>Cette manche</th><th class="n">Total / ${g.o.burnAt}</th></tr></thead><tbody>`;
+    g.players.forEach((p, i) => {
+      const row = r.rows[i];
+      if (row.out) { html += `<tr class="outrow"><td><span class="dot s${i}"></span>${esc(seatName(i))}</td><td><small>${i === 0 ? 'éliminé' : (FEM.has(p.name) ? 'éliminée' : 'éliminé')}</small></td><td class="n">${p.score}</td></tr>`; return; }
+      let note = String(row.note).replace(' en main', '').replace(/ seul$/, ' seul').replace('pas descendu', 'pas de descente');
+      const cls = `${i === r.winner ? 'rw ' : ''}${g.over && i === g.winner ? 'win' : ''}`;
+      html += `<tr class="${cls}${p.hand.length && i !== r.winner ? ' hasleft' : ''}"><td><span class="dot s${i}"></span>${esc(seatName(i))}</td><td>${row.pts > 0 ? '+' : ''}${String(row.pts).replace('-', '−')} <small>(${esc(note)})</small></td><td class="n">${p.score}</td></tr>`;
+      // the cards each player still holds, laid out as at a real table
+      if (p.hand.length && i !== r.winner) html += `<tr class="leftrow ${cls}"><td colspan="3"><div class="left">${p.hand.map(c => cardEl(c, 'tiny').outerHTML.replace(/ data-cid="[^"]*"/, '')).join('')}</div></td></tr>`;
+    });
+    html += '</tbody></table>';
+    r.burned.forEach(b => { html += `<div class="burnline">${FLAME}${b.i === 0 ? `Tu brûles à ${b.from} et tu repars à ${b.to}.` : `${esc(g.players[b.i].name)} brûle à ${b.from} et repart à ${b.to}.`}</div>`; });
+    (r.eliminated || []).forEach(i => { html += `<div class="burnline">${FLAME}${i === 0 ? `Tu es éliminé (${g.players[0].score}).` : `${esc(g.players[i].name)} est ${FEM.has(g.players[i].name) ? 'éliminée' : 'éliminé'} (${g.players[i].score}).`}</div>`; });
+    if (g.over) html += g.o.end === 'burn' ? `<p>Tous les autres ont atteint ${g.o.burnAt}.</p>` : `<p>Tous les autres ont atteint ${g.o.burnAt} : éliminés.</p>`;
+    const meOut = !g.over && g.players[0].out;
+    html += g.over ? '<button class="btn main" type="button" id="again">Nouvelle partie</button>'
+      : meOut ? '<button class="btn main" type="button" id="finish">Voir qui gagne</button>' : '<button class="btn main" type="button" id="next">Manche suivante</button>';
+    sh.innerHTML = html;
+    $('ovRound').hidden = false;
+    const nx = $('next'); if (nx) nx.onclick = () => { $('ovRound').hidden = true; newRound(); };
+    const ag = $('again'); if (ag) ag.onclick = () => { $('ovRound').hidden = true; openSetup(); };
+    // you are out: the others finish the game at once
+    const fi = $('finish'); if (fi) fi.onclick = () => { stopTimers(); K.playOut(g); sel.clear(); drawnId = null; save(); showRound(); };
+    (nx || ag || fi).focus();
+    render();
+  }
+
+  // ---------- setup ----------
+  const PRESET_TXT = {
+    classique: 'Le 14 libanais publié : as à 11 partout, −30 pour celui qui finit, à 201 on est éliminé.',
+    maison: 'Comme chez nous : A-2-3 vaut 6, 2 jokers seulement pour finir, à 201 on brûle.',
+  };
+  function paintPreset() {
+    [...$('preset').children].forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === preset)));
+    $('presetTxt').textContent = PRESET_TXT[preset];
+  }
+  $('preset').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; preset = b.dataset.v; paintPreset(); });
+  function openSetup() {
+    paintPreset();
+    $('pname').value = lsGet(NAMEKEY) || '';
+    $('cancelSetup').hidden = !g || g.over;
+    $('ovSetup').classList.toggle('solid', !g);
+    $('ovSetup').hidden = false;
+  }
+  $('cancelSetup').onclick = () => { $('ovSetup').hidden = true; };
+  $('nOpp').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; nOpp = +b.dataset.n; [...$('nOpp').children].forEach(x => x.setAttribute('aria-pressed', x === b)); });
+  $('setup').addEventListener('submit', e => {
+    e.preventDefault();
+    lsSet(OPTS, JSON.stringify({ preset }));
+    const name = ($('pname').value || '').trim().slice(0, 14);
+    lsSet(NAMEKEY, name);
+    stopTimers();
+    g = K.newGame([name || 'Toi'].concat(BOT_NAMES.slice(0, Math.min(4, nOpp))), { preset });
+    $('ovSetup').hidden = true; newRound();
+  });
+  $('btnNew').onclick = openSetup;
+  // menu (rules, sort, sound, new game) behind your own tile, so the game screen has no footer
+  $('me').addEventListener('click', e => {
+    if (!e.target.closest('#btnMenu') || !g) return;
+    $('menuRound').textContent = 'manche ' + g.round; $('mSort').hidden = g.roundOver; paintFx();
+    $('ovMenu').hidden = false; $('mClose').focus();
+  });
+  $('mClose').onclick = () => ($('ovMenu').hidden = true);
+  $('mNew').onclick = () => { $('ovMenu').hidden = true; openSetup(); };
+  $('mRules').onclick = () => { $('ovMenu').hidden = true; openRules(); };
+  $('mFx').onclick = () => setFx(!fxOn);
+  $('mSort').addEventListener('click', e => { const b = e.target.closest('[data-sort]'); if (!b) return; $('ovMenu').hidden = true; sortNow(b.dataset.sort); });
+  $('ovMenu').addEventListener('click', e => { if (e.target === $('ovMenu')) $('ovMenu').hidden = true; });
+  // portrait → live video, opened on demand (preview of the online version)
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-cam]'); if (!b || !g) return;
+    const i = +b.dataset.cam, p = g.players[i];
+    $('ovMenu').hidden = true;
+    $('camName').textContent = i === 0 ? 'Ta caméra' : p.name;
+    $('camIni').textContent = initials(i === 0 ? myName() : p.name);
+    $('camTxt').textContent = i === 0 ? 'Bientôt : ta vidéo s\'affichera ici, pour les autres joueurs.' : `Bientôt : la vidéo de ${p.name} s'affichera ici, seulement quand tu la touches.`;
+    $('camFrame').className = 'camframe c' + i;
+    $('ovCam').hidden = false; $('closeCam').focus();
+  });
+  $('closeCam').onclick = () => ($('ovCam').hidden = true);
+  $('ovCam').addEventListener('click', e => { if (e.target === $('ovCam')) $('ovCam').hidden = true; });
+  // the rules screen shows the rules of the game being played (or of the choice on the setup screen)
+  function openRules() {
+    const p = !$('ovSetup').hidden ? preset : (g ? g.o.preset : preset);
+    $('rulesTitle').textContent = p === 'maison' ? 'Règles de la maison' : 'Règles classiques';
+    $('rulesC').hidden = p === 'maison'; $('rulesM').hidden = p !== 'maison';
+    const jp = g && g.o.preset === p ? g.o.jokerPenalty : K.PRESETS[p].jokerPenalty;
+    document.querySelectorAll('.rJok').forEach(x => (x.textContent = jp));
+    $('ovRules').hidden = false; $('closeRules').focus();
+  }
+  $('btnRules').onclick = openRules;
+  $('setupRules').onclick = openRules;
+  $('closeRules').onclick = () => ($('ovRules').hidden = true);
+  $('closeRulesX').onclick = () => ($('ovRules').hidden = true);
+  $('ovRules').addEventListener('click', e => { if (e.target === $('ovRules')) $('ovRules').hidden = true; });
+  // Escape closes the sheet on top (never the score sheet, never the very first setup)
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    for (const id of ['ovCam', 'ovRules', 'ovMenu']) if (!$(id).hidden) { $(id).hidden = true; return; }
+    if (!$('ovSetup').hidden && g && !g.over) $('ovSetup').hidden = true;
+  });
+  $('stock').onclick = drawFromStock;
+  $('discard').onclick = () => {
+    if (!g) return;
+    if (myTurnNow() && g.phase === 'play') {
+      if (sel.size !== 1) { refuse(sel.size ? 'Une seule carte à la fois sur la fosse.' : 'Choisis d\'abord la carte à jeter.'); return; }
+      return act(() => K.discard(g, [...sel][0]));
+    }
+    takeFosse();
+  };
+  function tableAct() {
+    if (!g || !myTurnNow() || g.phase !== 'play' || !sel.size) return false;
+    act(() => dropOnTable([...sel])); return true;
+  }
+  $('table').addEventListener('click', e => {
+    const b = e.target.closest('[data-sort]'); if (b && g) { sortNow(b.dataset.sort); return; }
+    if (e.target.closest('.meld')) return;
+    tableAct();
+  });
+  $('table').addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target === $('table')) { e.preventDefault(); tableAct(); } });
+  // any new touch clears an old error (it stays on screen until then, so it can be read)
+  window.addEventListener('pointerdown', () => { if (errText) { errText = ''; if ($('side').classList.contains('errbtn')) requestAnimationFrame(render); } }, { capture: true });
+  // page lock (iOS before 16 ignores overscroll-behavior): a finger may scroll the table or a sheet, nothing else.
+  // Pointer events (card drags) are not affected by preventDefault on touchmove.
+  { let lastY = 0, sc = null;
+    document.addEventListener('touchstart', e => { lastY = e.touches[0].clientY; sc = e.target.closest ? e.target.closest('.table, .sheet') : null; }, { passive: true });
+    document.addEventListener('touchmove', e => {
+      if (!e.cancelable) return;
+      const y = e.touches[0].clientY, dy = y - lastY; lastY = y;
+      if (e.touches.length > 1 || !sc || drag) { e.preventDefault(); return; }
+      const top = sc.scrollTop <= 0, bottom = sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 1;
+      if (sc.scrollHeight <= sc.clientHeight + 1 || (top && dy > 0) || (bottom && dy < 0)) e.preventDefault();
+    }, { passive: false });
+    document.addEventListener('gesturestart', e => e.preventDefault()); // iOS pinch on the page
+  }
+
+  // ---------- boot ----------
+  function start(data) {
+    paintFx();
+    const s = (data && data.g) ? data : load();
+    if (s && s.g) { s.g.staging = s.g.staging || []; }
+    if (s && validSave(s)) {
+      try {
+        g = s.g; g.o = K.normOpts(g.o); order = Array.isArray(s.order) ? s.order : []; arranging = !!s.arranging; lastSort = s.lastSort || ''; drawnId = s.drawnId ?? null;
+        render();
+        if (g.roundOver) showRound(); else if (!arranging && g.turn !== 0) runBots();
+        return;
+      } catch (e) { console.error(e); g = null; }
+    }
+    if (s) lsDel(SAVE);
+    g = null; openSetup();
+  }
+  window.claude?.hot?.snapshot?.(() => ({ g, order, arranging, lastSort, drawnId }));
+  window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+})();
+
+</script>
+
+</body>
+</html>
